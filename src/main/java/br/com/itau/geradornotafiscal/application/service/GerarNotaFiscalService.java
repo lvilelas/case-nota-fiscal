@@ -5,7 +5,7 @@ import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorFrete
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTotalPedido;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTributosPedido;
 import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalFactory;
-import br.com.itau.geradornotafiscal.application.service.integration.OrquestradorIntegracoesNotaFiscal;
+import br.com.itau.geradornotafiscal.application.service.integration.PublicadorNotaFiscalGerada;
 import br.com.itau.geradornotafiscal.domain.model.NotaFiscal;
 import br.com.itau.geradornotafiscal.domain.model.Pedido;
 import br.com.itau.geradornotafiscal.domain.service.frete.ResultadoCalculoFrete;
@@ -20,19 +20,19 @@ public class GerarNotaFiscalService implements GerarNotaFiscalUseCase {
     private final CalculadorTributosPedido calculadorTributosPedido;
     private final CalculadorFretePedido calculadorFretePedido;
     private final NotaFiscalFactory notaFiscalFactory;
-    private final OrquestradorIntegracoesNotaFiscal orquestradorIntegracoes;
+    private final PublicadorNotaFiscalGerada publicadorNotaFiscalGerada;
 
     public GerarNotaFiscalService(
             CalculadorTotalPedido calculadorTotalPedido,
             CalculadorTributosPedido calculadorTributosPedido,
             CalculadorFretePedido calculadorFretePedido,
             NotaFiscalFactory notaFiscalFactory,
-            OrquestradorIntegracoesNotaFiscal orquestradorIntegracoes) {
+            PublicadorNotaFiscalGerada publicadorNotaFiscalGerada) {
         this.calculadorTotalPedido = calculadorTotalPedido;
         this.calculadorTributosPedido = calculadorTributosPedido;
         this.calculadorFretePedido = calculadorFretePedido;
         this.notaFiscalFactory = notaFiscalFactory;
-        this.orquestradorIntegracoes = orquestradorIntegracoes;
+        this.publicadorNotaFiscalGerada = publicadorNotaFiscalGerada;
     }
 
     @Override
@@ -74,7 +74,7 @@ public class GerarNotaFiscalService implements GerarNotaFiscalUseCase {
                 valorTotalItens,
                 resultadoTributario,
                 resultadoFrete);
-        orquestradorIntegracoes.executar(pedido.getIdPedido(), notaFiscal);
+        publicadorNotaFiscalGerada.publicar(pedido.getIdPedido(), notaFiscal);
         return notaFiscal;
     }
 

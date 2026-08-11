@@ -1,14 +1,11 @@
 package br.com.itau.geradornotafiscal.application.service;
 
-import br.com.itau.geradornotafiscal.application.port.out.AgendarEntregaPort;
-import br.com.itau.geradornotafiscal.application.port.out.BaixarEstoquePort;
-import br.com.itau.geradornotafiscal.application.port.out.EnviarNotaFiscalFinanceiroPort;
-import br.com.itau.geradornotafiscal.application.port.out.RegistrarNotaFiscalPort;
+import br.com.itau.geradornotafiscal.application.port.out.PublicarNotaFiscalGeradaPort;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorFretePedido;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTotalPedido;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTributosPedido;
 import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalFactory;
-import br.com.itau.geradornotafiscal.application.service.integration.OrquestradorIntegracoesNotaFiscal;
+import br.com.itau.geradornotafiscal.application.service.integration.PublicadorNotaFiscalGerada;
 import br.com.itau.geradornotafiscal.domain.exception.RegimeTributacaoNaoSuportadoException;
 import br.com.itau.geradornotafiscal.domain.exception.TipoPessoaNaoSuportadoException;
 import br.com.itau.geradornotafiscal.domain.model.Destinatario;
@@ -44,13 +41,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class GerarNotaFiscalServiceTest {
 
     @Mock
-    private BaixarEstoquePort baixarEstoquePort;
-    @Mock
-    private RegistrarNotaFiscalPort registrarNotaFiscalPort;
-    @Mock
-    private AgendarEntregaPort agendarEntregaPort;
-    @Mock
-    private EnviarNotaFiscalFinanceiroPort enviarNotaFiscalFinanceiroPort;
+    private PublicarNotaFiscalGeradaPort publicarNotaFiscalGeradaPort;
 
     private GerarNotaFiscalService geradorNotaFiscalService;
 
@@ -65,11 +56,7 @@ class GerarNotaFiscalServiceTest {
                 new CalculadorTributosPedido(new CatalogoTributario(), calculadorTributacao),
                 new CalculadorFretePedido(new CalculadorFrete(new CatalogoFreteRegional())),
                 new NotaFiscalFactory(),
-                new OrquestradorIntegracoesNotaFiscal(
-                        baixarEstoquePort,
-                        registrarNotaFiscalPort,
-                        agendarEntregaPort,
-                        enviarNotaFiscalFinanceiroPort));
+                new PublicadorNotaFiscalGerada(publicarNotaFiscalGeradaPort));
     }
 
     @Test
@@ -86,10 +73,7 @@ class GerarNotaFiscalServiceTest {
         assertEquals(1, notaFiscal.getItens().size());
         assertEquals(4, notaFiscal.getItens().get(0).getQuantidade());
         assertEquals(0, notaFiscal.getItens().get(0).getValorTributoItem());
-        verify(baixarEstoquePort).baixarEstoque(notaFiscal);
-        verify(registrarNotaFiscalPort).registrar(notaFiscal);
-        verify(agendarEntregaPort).agendar(notaFiscal);
-        verify(enviarNotaFiscalFinanceiroPort).enviar(notaFiscal);
+        verify(publicarNotaFiscalGeradaPort).publicar(pedido.getIdPedido(), notaFiscal);
     }
 
     @Test
@@ -251,7 +235,7 @@ class GerarNotaFiscalServiceTest {
                 () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
 
         assertEquals("Regime tributario nao suportado: OUTROS", exception.getMessage());
-        verifyNoInteractions(baixarEstoquePort, registrarNotaFiscalPort, agendarEntregaPort, enviarNotaFiscalFinanceiroPort);
+        verifyNoInteractions(publicarNotaFiscalGeradaPort);
     }
 
     @Test
@@ -267,7 +251,7 @@ class GerarNotaFiscalServiceTest {
                 () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
 
         assertEquals("Regime tributario nao suportado: null", exception.getMessage());
-        verifyNoInteractions(baixarEstoquePort, registrarNotaFiscalPort, agendarEntregaPort, enviarNotaFiscalFinanceiroPort);
+        verifyNoInteractions(publicarNotaFiscalGeradaPort);
     }
 
     @Test
@@ -283,7 +267,7 @@ class GerarNotaFiscalServiceTest {
                 () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
 
         assertEquals("Tipo de pessoa nao suportado: null", exception.getMessage());
-        verifyNoInteractions(baixarEstoquePort, registrarNotaFiscalPort, agendarEntregaPort, enviarNotaFiscalFinanceiroPort);
+        verifyNoInteractions(publicarNotaFiscalGeradaPort);
     }
 
     private Pedido pedido(

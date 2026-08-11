@@ -1,8 +1,11 @@
 package br.com.itau.geradornotafiscal.adapter.in.web;
 
 import br.com.itau.geradornotafiscal.application.port.in.GerarNotaFiscalUseCase;
+import br.com.itau.geradornotafiscal.adapter.in.web.dto.PedidoRequest;
+import br.com.itau.geradornotafiscal.adapter.in.web.mapper.PedidoWebMapper;
 import br.com.itau.geradornotafiscal.domain.model.NotaFiscal;
 import br.com.itau.geradornotafiscal.domain.model.Pedido;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -17,13 +20,18 @@ public class GeradorNotaFiscalController {
     private static final Logger LOGGER = LoggerFactory.getLogger(GeradorNotaFiscalController.class);
 
     private final GerarNotaFiscalUseCase gerarNotaFiscalUseCase;
+    private final PedidoWebMapper pedidoWebMapper;
 
-    public GeradorNotaFiscalController(GerarNotaFiscalUseCase gerarNotaFiscalUseCase) {
+    public GeradorNotaFiscalController(
+            GerarNotaFiscalUseCase gerarNotaFiscalUseCase,
+            PedidoWebMapper pedidoWebMapper) {
         this.gerarNotaFiscalUseCase = gerarNotaFiscalUseCase;
+        this.pedidoWebMapper = pedidoWebMapper;
     }
 
     @PostMapping("/gerarNotaFiscal")
-    public ResponseEntity<NotaFiscal> gerarNotaFiscal(@RequestBody Pedido pedido) {
+    public ResponseEntity<NotaFiscal> gerarNotaFiscal(@Valid @RequestBody PedidoRequest request) {
+        Pedido pedido = pedidoWebMapper.paraDominio(request);
         LOGGER.info(
                 "Pedido recebido pela API: pedidoId={}, quantidadeItens={}, valorTotalInformado={}, valorFrete={}",
                 pedido.getIdPedido(),
