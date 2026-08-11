@@ -4,6 +4,11 @@ import br.com.itau.geradornotafiscal.application.port.out.AgendarEntregaPort;
 import br.com.itau.geradornotafiscal.application.port.out.BaixarEstoquePort;
 import br.com.itau.geradornotafiscal.application.port.out.EnviarNotaFiscalFinanceiroPort;
 import br.com.itau.geradornotafiscal.application.port.out.RegistrarNotaFiscalPort;
+import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorFretePedido;
+import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTotalPedido;
+import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTributosPedido;
+import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalFactory;
+import br.com.itau.geradornotafiscal.application.service.integration.OrquestradorIntegracoesNotaFiscal;
 import br.com.itau.geradornotafiscal.domain.exception.RegimeTributacaoNaoSuportadoException;
 import br.com.itau.geradornotafiscal.domain.exception.TipoPessoaNaoSuportadoException;
 import br.com.itau.geradornotafiscal.domain.model.Destinatario;
@@ -56,13 +61,15 @@ class GerarNotaFiscalServiceTest {
                 new CalculadorTributacaoPorFaixa(calculadoraAliquotaProduto);
 
         geradorNotaFiscalService = new GerarNotaFiscalService(
-                new CatalogoTributario(),
-                calculadorTributacao,
-                new CalculadorFrete(new CatalogoFreteRegional()),
-                baixarEstoquePort,
-                registrarNotaFiscalPort,
-                agendarEntregaPort,
-                enviarNotaFiscalFinanceiroPort);
+                new CalculadorTotalPedido(),
+                new CalculadorTributosPedido(new CatalogoTributario(), calculadorTributacao),
+                new CalculadorFretePedido(new CalculadorFrete(new CatalogoFreteRegional())),
+                new NotaFiscalFactory(),
+                new OrquestradorIntegracoesNotaFiscal(
+                        baixarEstoquePort,
+                        registrarNotaFiscalPort,
+                        agendarEntregaPort,
+                        enviarNotaFiscalFinanceiroPort));
     }
 
     @Test

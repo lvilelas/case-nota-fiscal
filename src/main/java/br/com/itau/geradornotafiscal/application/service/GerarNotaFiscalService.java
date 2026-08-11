@@ -1,101 +1,84 @@
 package br.com.itau.geradornotafiscal.application.service;
 
 import br.com.itau.geradornotafiscal.application.port.in.GerarNotaFiscalUseCase;
-import br.com.itau.geradornotafiscal.application.port.out.AgendarEntregaPort;
-import br.com.itau.geradornotafiscal.application.port.out.BaixarEstoquePort;
-import br.com.itau.geradornotafiscal.application.port.out.EnviarNotaFiscalFinanceiroPort;
-import br.com.itau.geradornotafiscal.application.port.out.RegistrarNotaFiscalPort;
-import br.com.itau.geradornotafiscal.domain.model.Destinatario;
-import br.com.itau.geradornotafiscal.domain.model.Endereco;
-import br.com.itau.geradornotafiscal.domain.model.Finalidade;
-import br.com.itau.geradornotafiscal.domain.model.Item;
-import br.com.itau.geradornotafiscal.domain.model.ItemNotaFiscal;
+import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorFretePedido;
+import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTotalPedido;
+import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTributosPedido;
+import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalFactory;
+import br.com.itau.geradornotafiscal.application.service.integration.OrquestradorIntegracoesNotaFiscal;
 import br.com.itau.geradornotafiscal.domain.model.NotaFiscal;
 import br.com.itau.geradornotafiscal.domain.model.Pedido;
-import br.com.itau.geradornotafiscal.domain.model.Regiao;
-import br.com.itau.geradornotafiscal.domain.service.frete.CalculadorFrete;
-import br.com.itau.geradornotafiscal.domain.service.tributacao.CalculadorTributacaoPorFaixa;
-import br.com.itau.geradornotafiscal.domain.service.tributacao.CatalogoTributario;
-import br.com.itau.geradornotafiscal.domain.service.tributacao.FaixaAliquota;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
+import br.com.itau.geradornotafiscal.domain.service.frete.ResultadoCalculoFrete;
+import br.com.itau.geradornotafiscal.domain.service.tributacao.ResultadoCalculoTributario;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class GerarNotaFiscalService implements GerarNotaFiscalUseCase {
-	private final CatalogoTributario catalogoTributario;
-	private final CalculadorTributacaoPorFaixa calculadorTributacao;
-	private final CalculadorFrete calculadorFrete;
-	private final BaixarEstoquePort baixarEstoquePort;
-	private final RegistrarNotaFiscalPort registrarNotaFiscalPort;
-	private final AgendarEntregaPort agendarEntregaPort;
-	private final EnviarNotaFiscalFinanceiroPort enviarNotaFiscalFinanceiroPort;
+    private static final Logger LOGGER = LoggerFactory.getLogger(GerarNotaFiscalService.class);
 
-	public GerarNotaFiscalService(
-			CatalogoTributario catalogoTributario,
-			CalculadorTributacaoPorFaixa calculadorTributacao,
-			CalculadorFrete calculadorFrete,
-			BaixarEstoquePort baixarEstoquePort,
-			RegistrarNotaFiscalPort registrarNotaFiscalPort,
-			AgendarEntregaPort agendarEntregaPort,
-			EnviarNotaFiscalFinanceiroPort enviarNotaFiscalFinanceiroPort) {
-		this.catalogoTributario = catalogoTributario;
-		this.calculadorTributacao = calculadorTributacao;
-		this.calculadorFrete = calculadorFrete;
-		this.baixarEstoquePort = baixarEstoquePort;
-		this.registrarNotaFiscalPort = registrarNotaFiscalPort;
-		this.agendarEntregaPort = agendarEntregaPort;
-		this.enviarNotaFiscalFinanceiroPort = enviarNotaFiscalFinanceiroPort;
-	}
+    private final CalculadorTotalPedido calculadorTotalPedido;
+    private final CalculadorTributosPedido calculadorTributosPedido;
+    private final CalculadorFretePedido calculadorFretePedido;
+    private final NotaFiscalFactory notaFiscalFactory;
+    private final OrquestradorIntegracoesNotaFiscal orquestradorIntegracoes;
 
-	@Override
-	public NotaFiscal gerarNotaFiscal(Pedido pedido) {
+    public GerarNotaFiscalService(
+            CalculadorTotalPedido calculadorTotalPedido,
+            CalculadorTributosPedido calculadorTributosPedido,
+            CalculadorFretePedido calculadorFretePedido,
+            NotaFiscalFactory notaFiscalFactory,
+            OrquestradorIntegracoesNotaFiscal orquestradorIntegracoes) {
+        this.calculadorTotalPedido = calculadorTotalPedido;
+        this.calculadorTributosPedido = calculadorTributosPedido;
+        this.calculadorFretePedido = calculadorFretePedido;
+        this.notaFiscalFactory = notaFiscalFactory;
+        this.orquestradorIntegracoes = orquestradorIntegracoes;
+    }
 
-		Destinatario destinatario = pedido.getDestinatario();
-		double valorTotalItensCalculado = calcularValorTotalItens(pedido.getItens());
-		List<FaixaAliquota> faixas = catalogoTributario.buscar(
-				destinatario.getTipoPessoa(),
-				destinatario.getRegimeTributacao());
-		List<ItemNotaFiscal> itemNotaFiscalList = calculadorTributacao.calcular(
-				pedido.getItens(),
-				valorTotalItensCalculado,
-				faixas);
+    @Override
+    public NotaFiscal gerarNotaFiscal(Pedido pedido) {
+        long inicioProcessamento = System.nanoTime();
+        LOGGER.info(
+                "Iniciando geração da nota fiscal: pedidoId={}, quantidadeItens={}, tipoPessoa={}, regimeTributacao={}",
+                pedido.getIdPedido(),
+                pedido.getItens().size(),
+                pedido.getDestinatario().getTipoPessoa(),
+                pedido.getDestinatario().getRegimeTributacao());
 
-		Regiao regiao = destinatario.getEnderecos().stream()
-				.filter(endereco -> endereco.getFinalidade() == Finalidade.ENTREGA || endereco.getFinalidade() == Finalidade.COBRANCA_ENTREGA)
-				.map(Endereco::getRegiao)
-				.findFirst()
-				.orElse(null);
+        try {
+            NotaFiscal notaFiscal = processar(pedido);
+            LOGGER.info(
+                    "Geração da nota fiscal concluída: pedidoId={}, notaFiscalId={}, duracaoMs={}",
+                    pedido.getIdPedido(),
+                    notaFiscal.getIdNotaFiscal(),
+                    duracaoEmMilissegundos(inicioProcessamento));
+            return notaFiscal;
+        } catch (RuntimeException exception) {
+            LOGGER.error(
+                    "Falha na geração da nota fiscal: pedidoId={}, duracaoMs={}, tipoErro={}",
+                    pedido.getIdPedido(),
+                    duracaoEmMilissegundos(inicioProcessamento),
+                    exception.getClass().getSimpleName(),
+                    exception);
+            throw exception;
+        }
+    }
 
-		double valorFrete = pedido.getValorFrete();
-		double valorFreteComPercentual = calculadorFrete.calcular(valorFrete, regiao);
+    private NotaFiscal processar(Pedido pedido) {
+        double valorTotalItens = calculadorTotalPedido.calcular(pedido);
+        ResultadoCalculoTributario resultadoTributario =
+                calculadorTributosPedido.calcular(pedido, valorTotalItens);
+        ResultadoCalculoFrete resultadoFrete = calculadorFretePedido.calcular(pedido);
+        NotaFiscal notaFiscal = notaFiscalFactory.criar(
+                pedido,
+                valorTotalItens,
+                resultadoTributario,
+                resultadoFrete);
+        orquestradorIntegracoes.executar(pedido.getIdPedido(), notaFiscal);
+        return notaFiscal;
+    }
 
-		// Create the NotaFiscal object
-		String idNotaFiscal = UUID.randomUUID().toString();
-
-		NotaFiscal notaFiscal = NotaFiscal.builder()
-				.idNotaFiscal(idNotaFiscal)
-				.data(LocalDateTime.now())
-				.valorTotalItens(valorTotalItensCalculado)
-				.valorFrete(valorFreteComPercentual)
-				.itens(itemNotaFiscalList)
-				.destinatario(pedido.getDestinatario())
-				.build();
-
-		baixarEstoquePort.baixarEstoque(notaFiscal);
-		registrarNotaFiscalPort.registrar(notaFiscal);
-		agendarEntregaPort.agendar(notaFiscal);
-		enviarNotaFiscalFinanceiroPort.enviar(notaFiscal);
-
-		return notaFiscal;
-	}
-
-	private double calcularValorTotalItens(List<Item> itens) {
-		return itens.stream()
-				.map(item -> BigDecimal.valueOf(item.getValorUnitario())
-						.multiply(BigDecimal.valueOf(item.getQuantidade())))
-				.reduce(BigDecimal.ZERO, BigDecimal::add)
-				.doubleValue();
-	}
+    private long duracaoEmMilissegundos(long inicioProcessamento) {
+        return (System.nanoTime() - inicioProcessamento) / 1_000_000;
+    }
 }

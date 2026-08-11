@@ -9,8 +9,12 @@ public class CalculadorFrete {
         this.catalogoFreteRegional = catalogoFreteRegional;
     }
 
-    public double calcular(double valorFrete, Regiao regiao) {
+    public ResultadoCalculoFrete calcular(double valorFrete, Regiao regiao) {
         double multiplicador = catalogoFreteRegional.buscar(regiao);
-        return valorFrete * multiplicador;
+        return new ResultadoCalculoFrete(
+                valorFrete,
+                regiao,
+                multiplicador,
+                valorFrete * multiplicador);
     }
 }

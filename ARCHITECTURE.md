@@ -39,3 +39,25 @@ Na evolução assíncrona, os adaptadores atuais poderão ser substituídos por 
 ## Contrato HTTP
 
 O payload permanece em `snake_case`. A convenção foi movida das classes de domínio para a configuração do Jackson, evitando anotações de serialização dentro do núcleo.
+
+## Logs
+
+Os logs são emitidos nas fronteiras HTTP, no caso de uso e nos adaptadores de saída. O domínio continua sem dependência de framework de logging.
+
+O caso de uso principal registra apenas início, conclusão e falha geral. Os detalhes ficam distribuídos nos colaboradores responsáveis por totalização, tributação, frete, criação da nota e integrações externas, evitando concentrar observabilidade e regras em uma única classe.
+
+- `INFO`: entrada e saída da API, início e conclusão do processamento, resultados dos cálculos e chamadas externas;
+- `DEBUG`: catálogo completo de faixas tributárias recuperado;
+- `WARN`: interrupções e fluxo conhecido de alta latência da entrega;
+- `ERROR`: falha na geração ou devolução da nota fiscal.
+
+Os registros usam `pedidoId` e `notaFiscalId` para correlação. O payload completo, documentos e endereços não são registrados para evitar exposição de dados pessoais. O nível da aplicação pode ser alterado pela variável `LOG_LEVEL_APP`, com `INFO` como padrão.
+
+### Identificadores de rastreabilidade
+
+- `X-Correlation-Id`: identifica uma cadeia de chamadas ou sessão lógica. O consumidor pode enviar o valor recebido anteriormente para correlacionar várias requisições. Quando ausente ou inválido, a aplicação gera um UUID.
+- `X-Flow-Id`: identifica exclusivamente uma execução da API e sempre é gerado pela aplicação.
+
+Os dois identificadores são devolvidos nos headers HTTP e adicionados ao MDC como `correlationId` e `flowId`. O padrão do console os inclui automaticamente em todos os logs executados na mesma thread.
+
+Quando as integrações forem migradas para SNS/SQS, esses valores deverão ser publicados como message attributes. O consumidor deverá reconstruir o MDC antes do processamento e limpá-lo ao final, preservando a correlação através do fluxo assíncrono.

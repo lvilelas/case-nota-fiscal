@@ -9,6 +9,7 @@ import java.util.Collections;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class IntegrationAdaptersTest {
     private final NotaFiscal notaFiscal = new NotaFiscal();
@@ -65,10 +66,15 @@ class IntegrationAdaptersTest {
     }
 
     private void assertInterrupted(Runnable operacao) {
-        Thread.currentThread().interrupt();
+        try {
+            Thread.currentThread().interrupt();
 
-        RuntimeException exception = assertThrows(RuntimeException.class, operacao::run);
+            RuntimeException exception = assertThrows(RuntimeException.class, operacao::run);
 
-        assertInstanceOf(InterruptedException.class, exception.getCause());
+            assertInstanceOf(InterruptedException.class, exception.getCause());
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
     }
 }

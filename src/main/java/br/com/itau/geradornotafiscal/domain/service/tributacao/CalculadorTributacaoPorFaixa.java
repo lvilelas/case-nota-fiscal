@@ -1,6 +1,5 @@
 package br.com.itau.geradornotafiscal.domain.service.tributacao;
 
-import br.com.itau.geradornotafiscal.domain.model.ItemNotaFiscal;
 import br.com.itau.geradornotafiscal.domain.model.Item;
 
 import java.util.List;
@@ -12,16 +11,17 @@ public class CalculadorTributacaoPorFaixa {
         this.calculadoraAliquotaProduto = calculadoraAliquotaProduto;
     }
 
-    public List<ItemNotaFiscal> calcular(
+    public ResultadoCalculoTributario calcular(
             List<Item> itens,
             double valorTotalItens,
             List<FaixaAliquota> faixas) {
-        double aliquota = faixas.stream()
+        FaixaAliquota faixaAplicada = faixas.stream()
                 .filter(faixa -> faixa.aceita(valorTotalItens))
                 .findFirst()
-                .orElseThrow()
-                .aliquota();
+                .orElseThrow();
 
-        return calculadoraAliquotaProduto.calcularAliquota(itens, aliquota);
+        return new ResultadoCalculoTributario(
+                calculadoraAliquotaProduto.calcularAliquota(itens, faixaAplicada.aliquota()),
+                faixaAplicada);
     }
 }
