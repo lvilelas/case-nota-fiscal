@@ -22,3 +22,24 @@ output "application_secret_arn" {
   description = "ARN do secret do ambiente."
   value       = aws_secretsmanager_secret.application.arn
 }
+
+output "aurora_writer_endpoint" {
+  description = "Endpoint de escrita usado em DB_URL."
+  value       = aws_rds_cluster.nota_fiscal.endpoint
+}
+
+output "aurora_reader_endpoint" {
+  description = "Endpoint de leitura do cluster Aurora."
+  value       = aws_rds_cluster.nota_fiscal.reader_endpoint
+}
+
+output "aurora_port" {
+  description = "Porta PostgreSQL do Aurora."
+  value       = aws_rds_cluster.nota_fiscal.port
+}
+
+output "aurora_master_secret_arn" {
+  description = "Secret gerenciado pelo RDS com as credenciais master do Aurora."
+  value       = aws_rds_cluster.nota_fiscal.master_user_secret[0].secret_arn
+  sensitive   = true
+}

@@ -49,9 +49,9 @@ data "aws_iam_policy_document" "sns_to_sqs" {
   for_each = local.consumers
 
   statement {
-    sid       = "AllowNotaFiscalTopic"
-    effect    = "Allow"
-    actions   = ["sqs:SendMessage"]
+    sid     = "AllowNotaFiscalTopic"
+    effect  = "Allow"
+    actions = ["sqs:SendMessage"]
     resources = [
       aws_sqs_queue.consumer[each.key].arn
     ]
@@ -91,4 +91,61 @@ resource "aws_secretsmanager_secret" "application" {
   name                    = "case-nota-fiscal/${var.environment}"
   description             = "Configuracoes sensiveis do gerador de nota fiscal"
   recovery_window_in_days = 7
+}
+
+resource "aws_db_subnet_group" "aurora" {
+  name        = "${var.environment}-nota-fiscal-aurora"
+  description = "Subnets privadas do Aurora do gerador de nota fiscal"
+  subnet_ids  = var.private_subnet_ids
+}
+
+resource "aws_security_group" "aurora" {
+  name        = "${var.environment}-nota-fiscal-aurora"
+  description = "Acesso PostgreSQL ao Aurora somente pela aplicacao"
+  vpc_id      = var.vpc_id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "aurora_from_application" {
+  security_group_id            = aws_security_group.aurora.id
+  referenced_security_group_id = var.application_security_group_id
+  description                  = "PostgreSQL a partir da workload da aplicacao"
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_rds_cluster" "nota_fiscal" {
+  cluster_identifier          = "${var.environment}-nota-fiscal"
+  engine                      = "aurora-postgresql"
+  engine_mode                 = "provisioned"
+  database_name               = var.database_name
+  master_username             = var.database_master_username
+  manage_master_user_password = true
+  db_subnet_group_name        = aws_db_subnet_group.aurora.name
+  vpc_security_group_ids      = [aws_security_group.aurora.id]
+  storage_encrypted           = true
+  backup_retention_period     = var.database_backup_retention_days
+  preferred_backup_window     = "03:00-04:00"
+  deletion_protection         = var.environment == "prod"
+  skip_final_snapshot         = var.environment != "prod"
+  final_snapshot_identifier   = var.environment == "prod" ? "prod-nota-fiscal-final" : null
+
+  serverlessv2_scaling_configuration {
+    min_capacity = var.aurora_min_capacity
+    max_capacity = var.aurora_max_capacity
+  }
+}
+
+resource "aws_rds_cluster_instance" "nota_fiscal" {
+  count = var.aurora_instance_count
+
+  identifier                   = "${var.environment}-nota-fiscal-${count.index + 1}"
+  cluster_identifier           = aws_rds_cluster.nota_fiscal.id
+  instance_class               = "db.serverless"
+  engine                       = aws_rds_cluster.nota_fiscal.engine
+  engine_version               = aws_rds_cluster.nota_fiscal.engine_version
+  db_subnet_group_name         = aws_db_subnet_group.aurora.name
+  publicly_accessible          = false
+  auto_minor_version_upgrade   = true
+  performance_insights_enabled = true
 }

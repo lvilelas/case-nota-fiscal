@@ -1,11 +1,12 @@
 package br.com.itau.geradornotafiscal.application.service;
 
 import br.com.itau.geradornotafiscal.application.port.in.GerarNotaFiscalUseCase;
+import br.com.itau.geradornotafiscal.application.port.out.NotaFiscalIdempotenciaPort;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorFretePedido;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTotalPedido;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTributosPedido;
 import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalFactory;
-import br.com.itau.geradornotafiscal.application.service.integration.PublicadorNotaFiscalGerada;
+import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalGeradaEventFactory;
 import br.com.itau.geradornotafiscal.domain.model.NotaFiscal;
 import br.com.itau.geradornotafiscal.domain.model.Pedido;
 import br.com.itau.geradornotafiscal.domain.service.frete.ResultadoCalculoFrete;
@@ -20,19 +21,22 @@ public class GerarNotaFiscalService implements GerarNotaFiscalUseCase {
     private final CalculadorTributosPedido calculadorTributosPedido;
     private final CalculadorFretePedido calculadorFretePedido;
     private final NotaFiscalFactory notaFiscalFactory;
-    private final PublicadorNotaFiscalGerada publicadorNotaFiscalGerada;
+    private final NotaFiscalIdempotenciaPort idempotenciaPort;
+    private final NotaFiscalGeradaEventFactory eventFactory;
 
     public GerarNotaFiscalService(
             CalculadorTotalPedido calculadorTotalPedido,
             CalculadorTributosPedido calculadorTributosPedido,
             CalculadorFretePedido calculadorFretePedido,
             NotaFiscalFactory notaFiscalFactory,
-            PublicadorNotaFiscalGerada publicadorNotaFiscalGerada) {
+            NotaFiscalIdempotenciaPort idempotenciaPort,
+            NotaFiscalGeradaEventFactory eventFactory) {
         this.calculadorTotalPedido = calculadorTotalPedido;
         this.calculadorTributosPedido = calculadorTributosPedido;
         this.calculadorFretePedido = calculadorFretePedido;
         this.notaFiscalFactory = notaFiscalFactory;
-        this.publicadorNotaFiscalGerada = publicadorNotaFiscalGerada;
+        this.idempotenciaPort = idempotenciaPort;
+        this.eventFactory = eventFactory;
     }
 
     @Override
@@ -65,6 +69,15 @@ public class GerarNotaFiscalService implements GerarNotaFiscalUseCase {
     }
 
     private NotaFiscal processar(Pedido pedido) {
+        var notaExistente = idempotenciaPort.buscarPorPedidoId(pedido.getIdPedido());
+        if (notaExistente.isPresent()) {
+            LOGGER.info(
+                    "Requisição idempotente identificada: pedidoId={}, notaFiscalId={}",
+                    pedido.getIdPedido(),
+                    notaExistente.get().getIdNotaFiscal());
+            return notaExistente.get();
+        }
+
         double valorTotalItens = calculadorTotalPedido.calcular(pedido);
         ResultadoCalculoTributario resultadoTributario =
                 calculadorTributosPedido.calcular(pedido, valorTotalItens);
@@ -74,8 +87,8 @@ public class GerarNotaFiscalService implements GerarNotaFiscalUseCase {
                 valorTotalItens,
                 resultadoTributario,
                 resultadoFrete);
-        publicadorNotaFiscalGerada.publicar(pedido.getIdPedido(), notaFiscal);
-        return notaFiscal;
+        var evento = eventFactory.criar(pedido.getIdPedido(), notaFiscal);
+        return idempotenciaPort.salvarSeAusente(evento);
     }
 
     private long duracaoEmMilissegundos(long inicioProcessamento) {

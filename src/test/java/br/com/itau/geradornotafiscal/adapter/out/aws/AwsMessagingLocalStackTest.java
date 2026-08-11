@@ -4,6 +4,7 @@ import br.com.itau.geradornotafiscal.adapter.out.aws.secrets.AwsSecretsManagerAd
 import br.com.itau.geradornotafiscal.adapter.out.aws.sns.SnsNotaFiscalGeradaAdapter;
 import br.com.itau.geradornotafiscal.config.properties.AwsProperties;
 import br.com.itau.geradornotafiscal.domain.model.NotaFiscal;
+import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalGeradaEventFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -101,7 +102,8 @@ class AwsMessagingLocalStackTest {
                 .build();
         var notaFiscal = NotaFiscal.builder().idNotaFiscal("nf-localstack").itens(List.of()).build();
 
-        new SnsNotaFiscalGeradaAdapter(snsClient, objectMapper, properties).publicar(77, notaFiscal);
+        var evento = new NotaFiscalGeradaEventFactory().criar(77, notaFiscal);
+        new SnsNotaFiscalGeradaAdapter(snsClient, objectMapper, properties).publicar(evento);
 
         for (Map.Entry<String, String> queue : QUEUE_URLS.entrySet()) {
             var messages = sqsClient.receiveMessage(ReceiveMessageRequest.builder()

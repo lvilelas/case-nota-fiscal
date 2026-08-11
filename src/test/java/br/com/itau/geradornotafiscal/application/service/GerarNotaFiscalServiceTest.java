@@ -1,11 +1,12 @@
 package br.com.itau.geradornotafiscal.application.service;
 
-import br.com.itau.geradornotafiscal.application.port.out.PublicarNotaFiscalGeradaPort;
+import br.com.itau.geradornotafiscal.application.event.NotaFiscalGeradaEvent;
+import br.com.itau.geradornotafiscal.application.port.out.NotaFiscalIdempotenciaPort;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorFretePedido;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTotalPedido;
 import br.com.itau.geradornotafiscal.application.service.calculo.CalculadorTributosPedido;
 import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalFactory;
-import br.com.itau.geradornotafiscal.application.service.integration.PublicadorNotaFiscalGerada;
+import br.com.itau.geradornotafiscal.application.service.factory.NotaFiscalGeradaEventFactory;
 import br.com.itau.geradornotafiscal.domain.exception.RegimeTributacaoNaoSuportadoException;
 import br.com.itau.geradornotafiscal.domain.exception.TipoPessoaNaoSuportadoException;
 import br.com.itau.geradornotafiscal.domain.model.Destinatario;
@@ -31,17 +32,24 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class GerarNotaFiscalServiceTest {
 
     @Mock
-    private PublicarNotaFiscalGeradaPort publicarNotaFiscalGeradaPort;
+    private NotaFiscalIdempotenciaPort idempotenciaPort;
 
     private GerarNotaFiscalService geradorNotaFiscalService;
 
@@ -51,12 +59,17 @@ class GerarNotaFiscalServiceTest {
         CalculadorTributacaoPorFaixa calculadorTributacao =
                 new CalculadorTributacaoPorFaixa(calculadoraAliquotaProduto);
 
+        lenient().when(idempotenciaPort.buscarPorPedidoId(anyInt())).thenReturn(Optional.empty());
+        lenient().when(idempotenciaPort.salvarSeAusente(any(NotaFiscalGeradaEvent.class)))
+                .thenAnswer(invocation -> invocation.<NotaFiscalGeradaEvent>getArgument(0).notaFiscal());
+
         geradorNotaFiscalService = new GerarNotaFiscalService(
                 new CalculadorTotalPedido(),
                 new CalculadorTributosPedido(new CatalogoTributario(), calculadorTributacao),
                 new CalculadorFretePedido(new CalculadorFrete(new CatalogoFreteRegional())),
                 new NotaFiscalFactory(),
-                new PublicadorNotaFiscalGerada(publicarNotaFiscalGeradaPort));
+                idempotenciaPort,
+                new NotaFiscalGeradaEventFactory());
     }
 
     @Test
@@ -73,7 +86,23 @@ class GerarNotaFiscalServiceTest {
         assertEquals(1, notaFiscal.getItens().size());
         assertEquals(4, notaFiscal.getItens().get(0).getQuantidade());
         assertEquals(0, notaFiscal.getItens().get(0).getValorTributoItem());
-        verify(publicarNotaFiscalGeradaPort).publicar(pedido.getIdPedido(), notaFiscal);
+        verify(idempotenciaPort).salvarSeAusente(any(NotaFiscalGeradaEvent.class));
+    }
+
+    @Test
+    void deveDevolverNotaPersistidaSemGerarNovoEventoParaPedidoRepetido() {
+        Pedido pedido = pedido(
+                TipoPessoa.FISICA,
+                null,
+                100,
+                List.of(item("item-1", 100, 1)));
+        NotaFiscal persistida = NotaFiscal.builder().idNotaFiscal("nf-persistida").itens(List.of()).build();
+        when(idempotenciaPort.buscarPorPedidoId(pedido.getIdPedido())).thenReturn(Optional.of(persistida));
+
+        NotaFiscal resultado = geradorNotaFiscalService.gerarNotaFiscal(pedido);
+
+        assertSame(persistida, resultado);
+        verify(idempotenciaPort, never()).salvarSeAusente(any(NotaFiscalGeradaEvent.class));
     }
 
     @Test
@@ -235,7 +264,8 @@ class GerarNotaFiscalServiceTest {
                 () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
 
         assertEquals("Regime tributario nao suportado: OUTROS", exception.getMessage());
-        verifyNoInteractions(publicarNotaFiscalGeradaPort);
+        verify(idempotenciaPort).buscarPorPedidoId(pedido.getIdPedido());
+        verifyNoMoreInteractions(idempotenciaPort);
     }
 
     @Test
@@ -251,7 +281,8 @@ class GerarNotaFiscalServiceTest {
                 () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
 
         assertEquals("Regime tributario nao suportado: null", exception.getMessage());
-        verifyNoInteractions(publicarNotaFiscalGeradaPort);
+        verify(idempotenciaPort).buscarPorPedidoId(pedido.getIdPedido());
+        verifyNoMoreInteractions(idempotenciaPort);
     }
 
     @Test
@@ -267,7 +298,8 @@ class GerarNotaFiscalServiceTest {
                 () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
 
         assertEquals("Tipo de pessoa nao suportado: null", exception.getMessage());
-        verifyNoInteractions(publicarNotaFiscalGeradaPort);
+        verify(idempotenciaPort).buscarPorPedidoId(pedido.getIdPedido());
+        verifyNoMoreInteractions(idempotenciaPort);
     }
 
     private Pedido pedido(

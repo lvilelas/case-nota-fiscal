@@ -1,6 +1,7 @@
 package br.com.itau.geradornotafiscal.adapter.in.web.error;
 
 import br.com.itau.geradornotafiscal.application.exception.PublicacaoEventoException;
+import br.com.itau.geradornotafiscal.application.exception.PersistenciaNotaFiscalException;
 import br.com.itau.geradornotafiscal.domain.exception.RegimeTributacaoNaoSuportadoException;
 import br.com.itau.geradornotafiscal.domain.exception.TipoPessoaNaoSuportadoException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -76,6 +77,19 @@ public class ApiExceptionHandler {
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "MENSAGERIA_INDISPONIVEL",
                 "Não foi possível concluir a publicação do evento",
+                request,
+                List.of());
+    }
+
+    @ExceptionHandler(PersistenciaNotaFiscalException.class)
+    public ResponseEntity<ApiError> tratarIndisponibilidadePersistencia(
+            PersistenciaNotaFiscalException exception,
+            HttpServletRequest request) {
+        LOGGER.error("Persistência indisponível: path={}", request.getRequestURI(), exception);
+        return resposta(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "PERSISTENCIA_INDISPONIVEL",
+                "Não foi possível persistir o processamento da nota fiscal",
                 request,
                 List.of());
     }

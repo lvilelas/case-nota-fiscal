@@ -4,26 +4,17 @@ import br.com.itau.geradornotafiscal.application.event.NotaFiscalGeradaEvent;
 import br.com.itau.geradornotafiscal.application.exception.PublicacaoEventoException;
 import br.com.itau.geradornotafiscal.application.port.out.PublicarNotaFiscalGeradaPort;
 import br.com.itau.geradornotafiscal.config.properties.AwsProperties;
-import br.com.itau.geradornotafiscal.domain.model.NotaFiscal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.MessageAttributeValue;
 import software.amazon.awssdk.services.sns.model.PublishRequest;
 import software.amazon.awssdk.services.sns.model.PublishResponse;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
 
 public class SnsNotaFiscalGeradaAdapter implements PublicarNotaFiscalGeradaPort {
-    static final String EVENT_TYPE = "NotaFiscalGerada";
-    static final int EVENT_VERSION = 1;
-
     private static final Logger LOGGER = LoggerFactory.getLogger(SnsNotaFiscalGeradaAdapter.class);
 
     private final SnsClient snsClient;
@@ -40,8 +31,7 @@ public class SnsNotaFiscalGeradaAdapter implements PublicarNotaFiscalGeradaPort 
     }
 
     @Override
-    public void publicar(int pedidoId, NotaFiscal notaFiscal) {
-        NotaFiscalGeradaEvent evento = criarEvento(pedidoId, notaFiscal);
+    public void publicar(NotaFiscalGeradaEvent evento) {
         try {
             String mensagem = objectMapper.writeValueAsString(evento);
             PublishResponse response = snsClient.publish(PublishRequest.builder()
@@ -54,7 +44,7 @@ public class SnsNotaFiscalGeradaAdapter implements PublicarNotaFiscalGeradaPort 
                     evento.eventId(),
                     evento.eventVersion(),
                     response.messageId(),
-                    notaFiscal.getIdNotaFiscal());
+                    evento.notaFiscal().getIdNotaFiscal());
         } catch (Exception exception) {
             throw new PublicacaoEventoException(
                     "Falha ao publicar o evento NotaFiscalGerada",
@@ -62,23 +52,10 @@ public class SnsNotaFiscalGeradaAdapter implements PublicarNotaFiscalGeradaPort 
         }
     }
 
-    private NotaFiscalGeradaEvent criarEvento(int pedidoId, NotaFiscal notaFiscal) {
-        return new NotaFiscalGeradaEvent(
-                UUID.randomUUID().toString(),
-                EVENT_TYPE,
-                EVENT_VERSION,
-                OffsetDateTime.now(ZoneOffset.UTC),
-                contexto("correlationId"),
-                contexto("flowId"),
-                "nota-fiscal-gerada:pedido:" + pedidoId,
-                pedidoId,
-                notaFiscal);
-    }
-
     private Map<String, MessageAttributeValue> atributos(NotaFiscalGeradaEvent evento) {
         return Map.of(
-                "eventType", atributo(EVENT_TYPE),
-                "eventVersion", atributo(String.valueOf(EVENT_VERSION)),
+                "eventType", atributo(evento.eventType()),
+                "eventVersion", atributo(String.valueOf(evento.eventVersion())),
                 "eventId", atributo(evento.eventId()),
                 "correlationId", atributo(evento.correlationId()),
                 "flowId", atributo(evento.flowId()),
@@ -92,7 +69,4 @@ public class SnsNotaFiscalGeradaAdapter implements PublicarNotaFiscalGeradaPort 
                 .build();
     }
 
-    private String contexto(String nome) {
-        return Objects.requireNonNullElse(MDC.get(nome), "not-provided");
-    }
 }

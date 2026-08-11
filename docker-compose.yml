@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: case-nota-fiscal-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: nota_fiscal
+      POSTGRES_USER: nota_fiscal_app
+      POSTGRES_PASSWORD: local-only
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nota_fiscal_app -d nota_fiscal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   localstack:
     image: localstack/localstack:4.14.0
     container_name: case-nota-fiscal-localstack
@@ -17,3 +34,6 @@ services:
       start_period: 5s
       timeout: 3s
       retries: 30
+
+volumes:
+  postgres_data:
