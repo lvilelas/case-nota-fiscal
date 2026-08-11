@@ -1,31 +1,46 @@
 package br.com.itau.geradornotafiscal.service.impl;
 
-import br.com.itau.geradornotafiscal.model.*;
-import br.com.itau.geradornotafiscal.service.CalculadoraAliquotaProduto;
+import br.com.itau.geradornotafiscal.model.Destinatario;
+import br.com.itau.geradornotafiscal.model.Endereco;
+import br.com.itau.geradornotafiscal.model.Finalidade;
+import br.com.itau.geradornotafiscal.model.Item;
+import br.com.itau.geradornotafiscal.model.ItemNotaFiscal;
+import br.com.itau.geradornotafiscal.model.NotaFiscal;
+import br.com.itau.geradornotafiscal.model.Pedido;
+import br.com.itau.geradornotafiscal.model.Regiao;
 import br.com.itau.geradornotafiscal.service.GeradorNotaFiscalService;
+import br.com.itau.geradornotafiscal.service.frete.CalculadorFrete;
+import br.com.itau.geradornotafiscal.service.tributacao.faixa.CalculadorTributacaoPorFaixa;
+import br.com.itau.geradornotafiscal.service.tributacao.faixa.FaixaAliquota;
+import br.com.itau.geradornotafiscal.service.tributacao.tabela.CatalogoTributario;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Service
 public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService{
-	private final CalculadoraAliquotaProduto calculadoraAliquotaProduto;
+	private final CatalogoTributario catalogoTributario;
+	private final CalculadorTributacaoPorFaixa calculadorTributacao;
+	private final CalculadorFrete calculadorFrete;
 	private final EstoqueService estoqueService;
 	private final RegistroService registroService;
 	private final EntregaService entregaService;
 	private final FinanceiroService financeiroService;
 
 	public GeradorNotaFiscalServiceImpl(
-			CalculadoraAliquotaProduto calculadoraAliquotaProduto,
+			CatalogoTributario catalogoTributario,
+			CalculadorTributacaoPorFaixa calculadorTributacao,
+			CalculadorFrete calculadorFrete,
 			EstoqueService estoqueService,
 			RegistroService registroService,
 			EntregaService entregaService,
 			FinanceiroService financeiroService) {
-		this.calculadoraAliquotaProduto = calculadoraAliquotaProduto;
+		this.catalogoTributario = catalogoTributario;
+		this.calculadorTributacao = calculadorTributacao;
+		this.calculadorFrete = calculadorFrete;
 		this.estoqueService = estoqueService;
 		this.registroService = registroService;
 		this.entregaService = entregaService;
@@ -36,69 +51,15 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService{
 	public NotaFiscal gerarNotaFiscal(Pedido pedido) {
 
 		Destinatario destinatario = pedido.getDestinatario();
-		TipoPessoa tipoPessoa = destinatario.getTipoPessoa();
-		List<ItemNotaFiscal> itemNotaFiscalList = new ArrayList<>();
 		double valorTotalItensCalculado = calcularValorTotalItens(pedido.getItens());
+		List<FaixaAliquota> faixas = catalogoTributario.buscar(
+				destinatario.getTipoPessoa(),
+				destinatario.getRegimeTributacao());
+		List<ItemNotaFiscal> itemNotaFiscalList = calculadorTributacao.calcular(
+				pedido.getItens(),
+				valorTotalItensCalculado,
+				faixas);
 
-		if (tipoPessoa == TipoPessoa.FISICA) {
-			double aliquota;
-
-			if (valorTotalItensCalculado < 500) {
-				aliquota = 0;
-			} else if (valorTotalItensCalculado <= 2000) {
-				aliquota = 0.12;
-			} else if (valorTotalItensCalculado <= 3500) {
-				aliquota = 0.15;
-			} else {
-				aliquota = 0.17;
-			}
-			itemNotaFiscalList = calculadoraAliquotaProduto.calcularAliquota(pedido.getItens(), aliquota);
-		} else if (tipoPessoa == TipoPessoa.JURIDICA) {
-
-			RegimeTributacaoPJ regimeTributacao = destinatario.getRegimeTributacao();
-
-			if (regimeTributacao == RegimeTributacaoPJ.SIMPLES_NACIONAL) {
-				double aliquota;
-
-				if (valorTotalItensCalculado < 1000) {
-					aliquota = 0.03;
-				} else if (valorTotalItensCalculado <= 2000) {
-					aliquota = 0.07;
-				} else if (valorTotalItensCalculado <= 5000) {
-					aliquota = 0.13;
-				} else {
-					aliquota = 0.19;
-				}
-				itemNotaFiscalList = calculadoraAliquotaProduto.calcularAliquota(pedido.getItens(), aliquota);
-			} else if (regimeTributacao == RegimeTributacaoPJ.LUCRO_REAL) {
-				double aliquota;
-
-				if (valorTotalItensCalculado < 1000) {
-					aliquota = 0.03;
-				} else if (valorTotalItensCalculado <= 2000) {
-					aliquota = 0.09;
-				} else if (valorTotalItensCalculado <= 5000) {
-					aliquota = 0.15;
-				} else {
-					aliquota = 0.20;
-				}
-				itemNotaFiscalList= calculadoraAliquotaProduto.calcularAliquota(pedido.getItens(),aliquota);
-			} else if (regimeTributacao == RegimeTributacaoPJ.LUCRO_PRESUMIDO) {
-				double aliquota;
-
-				if (valorTotalItensCalculado < 1000) {
-					aliquota = 0.03;
-				} else if (valorTotalItensCalculado <= 2000) {
-					aliquota = 0.09;
-				} else if (valorTotalItensCalculado <= 5000) {
-					aliquota = 0.16;
-				} else {
-					aliquota = 0.20;
-				}
-				itemNotaFiscalList = calculadoraAliquotaProduto.calcularAliquota(pedido.getItens(),aliquota);
-			}
-		}
-		//Regras diferentes para frete
 
 		Regiao regiao = destinatario.getEnderecos().stream()
 				.filter(endereco -> endereco.getFinalidade() == Finalidade.ENTREGA || endereco.getFinalidade() == Finalidade.COBRANCA_ENTREGA)
@@ -107,19 +68,7 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService{
 				.orElse(null);
 
 		double valorFrete = pedido.getValorFrete();
-		double valorFreteComPercentual =0;
-
-		if (regiao == Regiao.NORTE) {
-			valorFreteComPercentual = valorFrete * 1.08;
-		} else if (regiao == Regiao.NORDESTE) {
-			valorFreteComPercentual = valorFrete * 1.085;
-		} else if (regiao == Regiao.CENTRO_OESTE) {
-			valorFreteComPercentual = valorFrete * 1.07;
-		} else if (regiao == Regiao.SUDESTE) {
-			valorFreteComPercentual = valorFrete * 1.048;
-		} else if (regiao == Regiao.SUL) {
-			valorFreteComPercentual = valorFrete * 1.06;
-		}
+		double valorFreteComPercentual = calculadorFrete.calcular(valorFrete, regiao);
 
 		// Create the NotaFiscal object
 		String idNotaFiscal = UUID.randomUUID().toString();

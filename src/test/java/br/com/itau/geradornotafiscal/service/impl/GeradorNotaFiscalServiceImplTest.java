@@ -10,6 +10,12 @@ import br.com.itau.geradornotafiscal.model.Regiao;
 import br.com.itau.geradornotafiscal.model.RegimeTributacaoPJ;
 import br.com.itau.geradornotafiscal.model.TipoPessoa;
 import br.com.itau.geradornotafiscal.service.CalculadoraAliquotaProduto;
+import br.com.itau.geradornotafiscal.service.frete.CalculadorFrete;
+import br.com.itau.geradornotafiscal.service.frete.tabela.CatalogoFreteRegional;
+import br.com.itau.geradornotafiscal.service.tributacao.exception.RegimeTributacaoNaoSuportadoException;
+import br.com.itau.geradornotafiscal.service.tributacao.exception.TipoPessoaNaoSuportadoException;
+import br.com.itau.geradornotafiscal.service.tributacao.faixa.CalculadorTributacaoPorFaixa;
+import br.com.itau.geradornotafiscal.service.tributacao.tabela.CatalogoTributario;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,7 +27,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class GeradorNotaFiscalServiceImplTest {
@@ -39,8 +47,14 @@ class GeradorNotaFiscalServiceImplTest {
 
     @BeforeEach
     void setup() {
+        CalculadoraAliquotaProduto calculadoraAliquotaProduto = new CalculadoraAliquotaProduto();
+        CalculadorTributacaoPorFaixa calculadorTributacao =
+                new CalculadorTributacaoPorFaixa(calculadoraAliquotaProduto);
+
         geradorNotaFiscalService = new GeradorNotaFiscalServiceImpl(
-                new CalculadoraAliquotaProduto(),
+                new CatalogoTributario(),
+                calculadorTributacao,
+                new CalculadorFrete(new CatalogoFreteRegional()),
                 estoqueService,
                 registroService,
                 entregaService,
@@ -210,33 +224,51 @@ class GeradorNotaFiscalServiceImplTest {
     }
 
     @Test
-    void deveManterItensVaziosParaRegimeTributarioNaoMapeado() {
+    void deveLancarExcecaoParaRegimeTributarioNaoMapeado() {
         Pedido pedido = pedido(
                 TipoPessoa.JURIDICA,
                 RegimeTributacaoPJ.OUTROS,
                 0,
                 List.of(item("item", 100, 1)));
 
-        NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido);
+        RegimeTributacaoNaoSuportadoException exception = assertThrows(
+                RegimeTributacaoNaoSuportadoException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
 
-        assertEquals(0, notaFiscal.getItens().size());
+        assertEquals("Regime tributario nao suportado: OUTROS", exception.getMessage());
+        verifyNoInteractions(estoqueService, registroService, entregaService, financeiroService);
     }
 
     @Test
-    void deveManterItensVaziosParaTipoPessoaNaoInformado() {
+    void deveLancarExcecaoParaRegimeTributarioNaoInformado() {
+        Pedido pedido = pedido(
+                TipoPessoa.JURIDICA,
+                null,
+                0,
+                List.of(item("item", 100, 1)));
+
+        RegimeTributacaoNaoSuportadoException exception = assertThrows(
+                RegimeTributacaoNaoSuportadoException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
+
+        assertEquals("Regime tributario nao suportado: null", exception.getMessage());
+        verifyNoInteractions(estoqueService, registroService, entregaService, financeiroService);
+    }
+
+    @Test
+    void deveLancarExcecaoParaTipoPessoaNaoInformado() {
         Pedido pedido = pedido(
                 null,
                 null,
                 0,
                 List.of(item("item", 100, 1)));
 
-        NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido);
+        TipoPessoaNaoSuportadoException exception = assertThrows(
+                TipoPessoaNaoSuportadoException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
 
-        assertEquals(0, notaFiscal.getItens().size());
-        verify(estoqueService).enviarNotaFiscalParaBaixaEstoque(notaFiscal);
-        verify(registroService).registrarNotaFiscal(notaFiscal);
-        verify(entregaService).agendarEntrega(notaFiscal);
-        verify(financeiroService).enviarNotaFiscalParaContasReceber(notaFiscal);
+        assertEquals("Tipo de pessoa nao suportado: null", exception.getMessage());
+        verifyNoInteractions(estoqueService, registroService, entregaService, financeiroService);
     }
 
     private Pedido pedido(
