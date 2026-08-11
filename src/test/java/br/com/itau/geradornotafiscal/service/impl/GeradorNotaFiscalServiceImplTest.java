@@ -12,6 +12,8 @@ import br.com.itau.geradornotafiscal.model.TipoPessoa;
 import br.com.itau.geradornotafiscal.service.CalculadoraAliquotaProduto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -19,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class GeradorNotaFiscalServiceImplTest {
@@ -114,14 +117,152 @@ class GeradorNotaFiscalServiceImplTest {
         assertEquals("segundo", segundaNota.getItens().get(0).getIdItem());
     }
 
+    @ParameterizedTest(name = "PF com total {0} deve aplicar aliquota {1}")
+    @CsvSource({
+            "499.99, 0.00",
+            "500.00, 0.12",
+            "2000.00, 0.12",
+            "2000.01, 0.15",
+            "3500.00, 0.15",
+            "3500.01, 0.17"
+    })
+    void deveAplicarAliquotaCorretaParaPessoaFisica(double total, double aliquota) {
+        NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido(
+                TipoPessoa.FISICA,
+                null,
+                0,
+                List.of(item("item", total, 1))));
+
+        assertEquals(total, notaFiscal.getValorTotalItens(), 0.001);
+        assertEquals(total * aliquota, notaFiscal.getItens().get(0).getValorTributoItem(), 0.001);
+    }
+
+    @ParameterizedTest(name = "{0} com total {1} deve aplicar aliquota {2}")
+    @CsvSource({
+            "SIMPLES_NACIONAL, 999.99, 0.03",
+            "SIMPLES_NACIONAL, 1000.00, 0.07",
+            "SIMPLES_NACIONAL, 2000.00, 0.07",
+            "SIMPLES_NACIONAL, 2000.01, 0.13",
+            "SIMPLES_NACIONAL, 5000.00, 0.13",
+            "SIMPLES_NACIONAL, 5000.01, 0.19",
+            "LUCRO_REAL, 999.99, 0.03",
+            "LUCRO_REAL, 1000.00, 0.09",
+            "LUCRO_REAL, 2000.00, 0.09",
+            "LUCRO_REAL, 2000.01, 0.15",
+            "LUCRO_REAL, 5000.00, 0.15",
+            "LUCRO_REAL, 5000.01, 0.20",
+            "LUCRO_PRESUMIDO, 999.99, 0.03",
+            "LUCRO_PRESUMIDO, 1000.00, 0.09",
+            "LUCRO_PRESUMIDO, 2000.00, 0.09",
+            "LUCRO_PRESUMIDO, 2000.01, 0.16",
+            "LUCRO_PRESUMIDO, 5000.00, 0.16",
+            "LUCRO_PRESUMIDO, 5000.01, 0.20"
+    })
+    void deveAplicarAliquotaCorretaParaPessoaJuridica(
+            RegimeTributacaoPJ regimeTributacao,
+            double total,
+            double aliquota) {
+        NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido(
+                TipoPessoa.JURIDICA,
+                regimeTributacao,
+                0,
+                List.of(item("item", total, 1))));
+
+        assertEquals(total, notaFiscal.getValorTotalItens(), 0.001);
+        assertEquals(total * aliquota, notaFiscal.getItens().get(0).getValorTributoItem(), 0.001);
+    }
+
+    @ParameterizedTest(name = "Frete para {0} deve usar multiplicador {1}")
+    @CsvSource({
+            "NORTE, 1.08",
+            "NORDESTE, 1.085",
+            "CENTRO_OESTE, 1.07",
+            "SUDESTE, 1.048",
+            "SUL, 1.06"
+    })
+    void deveCalcularFreteConformeRegiao(Regiao regiao, double multiplicador) {
+        Pedido pedido = pedido(
+                TipoPessoa.FISICA,
+                null,
+                0,
+                List.of(item("item", 100, 1)),
+                Finalidade.COBRANCA_ENTREGA,
+                regiao);
+
+        NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido);
+
+        assertEquals(100 * multiplicador, notaFiscal.getValorFrete(), 0.001);
+    }
+
+    @Test
+    void deveManterFreteZeradoQuandoNaoHaEnderecoDeEntrega() {
+        Pedido pedido = pedido(
+                TipoPessoa.FISICA,
+                null,
+                0,
+                List.of(item("item", 100, 1)),
+                Finalidade.COBRANCA,
+                Regiao.NORTE);
+
+        NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido);
+
+        assertEquals(0, notaFiscal.getValorFrete());
+    }
+
+    @Test
+    void deveManterItensVaziosParaRegimeTributarioNaoMapeado() {
+        Pedido pedido = pedido(
+                TipoPessoa.JURIDICA,
+                RegimeTributacaoPJ.OUTROS,
+                0,
+                List.of(item("item", 100, 1)));
+
+        NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido);
+
+        assertEquals(0, notaFiscal.getItens().size());
+    }
+
+    @Test
+    void deveManterItensVaziosParaTipoPessoaNaoInformado() {
+        Pedido pedido = pedido(
+                null,
+                null,
+                0,
+                List.of(item("item", 100, 1)));
+
+        NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido);
+
+        assertEquals(0, notaFiscal.getItens().size());
+        verify(estoqueService).enviarNotaFiscalParaBaixaEstoque(notaFiscal);
+        verify(registroService).registrarNotaFiscal(notaFiscal);
+        verify(entregaService).agendarEntrega(notaFiscal);
+        verify(financeiroService).enviarNotaFiscalParaContasReceber(notaFiscal);
+    }
+
     private Pedido pedido(
             TipoPessoa tipoPessoa,
             RegimeTributacaoPJ regimeTributacao,
             double valorTotalInformado,
             List<Item> itens) {
+        return pedido(
+                tipoPessoa,
+                regimeTributacao,
+                valorTotalInformado,
+                itens,
+                Finalidade.ENTREGA,
+                Regiao.SUDESTE);
+    }
+
+    private Pedido pedido(
+            TipoPessoa tipoPessoa,
+            RegimeTributacaoPJ regimeTributacao,
+            double valorTotalInformado,
+            List<Item> itens,
+            Finalidade finalidade,
+            Regiao regiao) {
         Endereco endereco = Endereco.builder()
-                .finalidade(Finalidade.ENTREGA)
-                .regiao(Regiao.SUDESTE)
+                .finalidade(finalidade)
+                .regiao(regiao)
                 .build();
 
         Destinatario destinatario = Destinatario.builder()
