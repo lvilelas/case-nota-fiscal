@@ -10,6 +10,7 @@ docker compose ps
 São iniciados:
 
 - aplicação Java 21: <http://localhost:8080>;
+- consumidores simulados (`ALL`): <http://localhost:8081/actuator/health>;
 - PostgreSQL 16: `localhost:5432`;
 - LocalStack SNS/SQS/Secrets: <http://localhost:4566>;
 - Prometheus: <http://localhost:9090>;
@@ -23,7 +24,32 @@ Endpoints úteis:
 - OpenAPI JSON: <http://localhost:8080/v3/api-docs>;
 - Swagger UI: <http://localhost:8080/swagger-ui.html>.
 
-O Flyway cria automaticamente `nota_fiscal_processada` e `outbox_evento`. Prometheus coleta CPU, memória, JVM, GC, latência, throughput e erros HTTP. Os traces OTLP aparecem no Jaeger e os logs apresentam `traceId`, `spanId`, `correlationId` e `flowId`.
+O Flyway cria automaticamente `nota_fiscal_processada` e `outbox_evento`. O container `consumidores-simulados` inicia quatro listeners SQS em virtual threads e remove cada mensagem somente depois do respectivo handler. Prometheus coleta a aplicação e o worker. Os traces OTLP aparecem no Jaeger e os logs apresentam os identificadores de rastreabilidade.
+
+## Consumidores SQS
+
+Por padrão, um container consome estoque, registro, entrega e financeiro:
+
+```bash
+docker compose logs -f consumidores-simulados
+```
+
+Para demonstrar quatro processos independentes usando a mesma imagem, primeiro pare o modo `ALL` e depois inicie uma instância por tipo. `docker compose run` não publica a porta de management, evitando conflito entre as quatro instâncias:
+
+```bash
+docker compose stop consumidores-simulados
+docker compose run -d --no-deps --name consumidor-estoque -e CONSUMER_TYPE=ESTOQUE consumidores-simulados
+docker compose run -d --no-deps --name consumidor-registro -e CONSUMER_TYPE=REGISTRO consumidores-simulados
+docker compose run -d --no-deps --name consumidor-entrega -e CONSUMER_TYPE=ENTREGA consumidores-simulados
+docker compose run -d --no-deps --name consumidor-financeiro -e CONSUMER_TYPE=FINANCEIRO consumidores-simulados
+```
+
+Essa separação permite escalar e implantar cada tipo de consumidor de forma independente sem gerar quatro artefatos. Para retornar ao modo local padrão:
+
+```bash
+docker rm -f consumidor-estoque consumidor-registro consumidor-entrega consumidor-financeiro
+docker compose up -d consumidores-simulados
+```
 
 ## Opção 2: aplicação pelo IntelliJ
 
@@ -57,10 +83,13 @@ awslocal sqs receive-message --queue-url "$URL" --max-number-of-messages 10 \
 '
 ```
 
+Como o worker local consome rapidamente, pare `consumidores-simulados` antes dessa inspeção se quiser observar mensagens pendentes.
+
 ## Testes
 
 ```bash
 ./mvnw verify
+./mvnw -f consumidores-simulados/pom.xml verify
 ```
 
 Com Docker, Testcontainers valida PostgreSQL e LocalStack reais. O teste de carga JMeter está documentado em [performance/README.md](../performance/README.md).

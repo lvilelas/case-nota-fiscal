@@ -24,6 +24,11 @@ flowchart LR
     TOPIC --> REGISTRO["SQS registro"]
     TOPIC --> ENTREGA["SQS entrega"]
     TOPIC --> FINANCEIRO["SQS financeiro"]
+    ESTOQUE --> WORKER["consumidores-simulados"]
+    REGISTRO --> WORKER
+    ENTREGA --> WORKER
+    FINANCEIRO --> WORKER
+    WORKER --> HANDLERS["4 listeners + 4 handlers"]
 ```
 
 Na primeira chamada de um `pedido_id`, a nota e o evento de outbox são gravados na mesma transação. Chamadas repetidas retornam a resposta persistida. A chave primária de `nota_fiscal_processada` garante a decisão mesmo quando duas instâncias recebem o pedido simultaneamente.
@@ -75,10 +80,13 @@ Todos os erros devolvem `correlation_id`, `flow_id`, código estável, status, m
 - Cada fila possui DLQ própria e redrive policy.
 - Filas separadas isolam falhas e backlog dos quatro consumidores.
 - A policy SQS aceita mensagens somente do tópico esperado.
+- O worker didático executa os quatro listeners no modo `ALL` ou somente um com `CONSUMER_TYPE`; a imagem é a mesma nos dois modos.
+- A mensagem é excluída apenas após o handler terminar. Falhas mantêm a entrega para retry/DLQ.
+- Como os handlers apenas simulam latência e não produzem efeitos reais, a idempotência durável continua sendo responsabilidade de cada consumidor de produção.
 
 ## Ambientes e infraestrutura
 
-- `local`: aplicação, PostgreSQL 16, LocalStack, Prometheus e Jaeger via Docker Compose.
+- `local`: aplicação, worker de consumidores, PostgreSQL 16, LocalStack, Prometheus e Jaeger via Docker Compose.
 - `dev`, `homol` e `prod`: URL e credenciais do banco chegam por variáveis/injeção segura; o código JDBC e as migrations são os mesmos.
 - AWS: Terraform cria ALB, ECS/Fargate, ECR, Aurora PostgreSQL Serverless v2, IAM, mensageria e observabilidade.
 
@@ -108,6 +116,10 @@ flowchart TB
     SNS --> QR["SQS registro + DLQ"]
     SNS --> QEN["SQS entrega + DLQ"]
     SNS --> QF["SQS financeiro + DLQ"]
+    QE --> CONSUMERS["Consumidores reais (deploys independentes)"]
+    QR --> CONSUMERS
+    QEN --> CONSUMERS
+    QF --> CONSUMERS
     ECS --> ADOT["ADOT sidecar"]
     ADOT --> XRAY["AWS X-Ray"]
     ECS --> LOGS["CloudWatch Logs / Container Insights"]

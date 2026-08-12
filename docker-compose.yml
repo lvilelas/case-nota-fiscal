@@ -34,6 +34,31 @@ services:
       retries: 12
     stop_grace_period: 35s
 
+  consumidores-simulados:
+    build:
+      context: .
+      dockerfile: consumidores-simulados/Dockerfile
+    image: case-nota-fiscal-consumidores:local
+    container_name: case-nota-fiscal-consumidores
+    ports:
+      - "${CONSUMER_PORT:-8081}:8081"
+    environment:
+      CONSUMER_TYPE: ${CONSUMER_TYPE:-ALL}
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 20s
+      retries: 12
+    stop_grace_period: 30s
+
   postgres:
     image: postgres:16-alpine
     container_name: case-nota-fiscal-postgres
@@ -83,6 +108,8 @@ services:
       - prometheus_data:/prometheus
     depends_on:
       app:
+        condition: service_healthy
+      consumidores-simulados:
         condition: service_healthy
 
   jaeger:

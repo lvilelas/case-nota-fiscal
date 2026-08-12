@@ -7,3 +7,8 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["app:8080"]
+
+  - job_name: consumidores-simulados
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["consumidores-simulados:8081"]

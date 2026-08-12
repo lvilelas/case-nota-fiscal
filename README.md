@@ -136,6 +136,7 @@ O principal objetivo é demonstrar **como você pensa, investiga problemas, toma
 
 - [Arquitetura hexagonal, eventos e diagrama AWS](ARCHITECTURE.md)
 - [Execução local com Docker Compose](docs/EXECUCAO-LOCAL.md)
+- [Worker didático com quatro consumidores SQS](consumidores-simulados/README.md)
 - [Infraestrutura Terraform e configuração do pipeline](infra/terraform/README.md)
 - [Runbook operacional](docs/RUNBOOK.md)
 - [Teste de performance com JMeter](performance/README.md)
