@@ -152,13 +152,16 @@ variable "aurora_max_capacity" {
 }
 
 variable "aurora_instance_count" {
-  description = "Quantidade de instancias Serverless v2. Use pelo menos duas em producao para failover."
+  description = "Quantidade de instancias Serverless v2. Producao exige pelo menos duas para failover Multi-AZ."
   type        = number
   default     = 1
 
   validation {
-    condition     = var.aurora_instance_count >= 1
-    error_message = "aurora_instance_count deve ser maior ou igual a 1."
+    condition = (
+      var.aurora_instance_count >= 1 &&
+      (var.environment != "prod" || var.aurora_instance_count >= 2)
+    )
+    error_message = "aurora_instance_count deve ser >= 1 e, em prod, >= 2 para garantir failover."
   }
 }
 

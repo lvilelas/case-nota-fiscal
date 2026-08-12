@@ -21,6 +21,15 @@ terraform plan
 terraform apply
 ```
 
+Para produção use o arquivo dedicado, que configura duas instâncias Aurora Serverless v2. A validação do módulo rejeita qualquer plano `prod` com menos de duas instâncias:
+
+```bash
+terraform plan -var-file=environments/prod.tfvars
+terraform apply -var-file=environments/prod.tfvars
+```
+
+Copie `environments/prod.tfvars.example` para `environments/prod.tfvars` e preencha os identificadores reais. Duas instâncias permitem failover do writer; o cluster continua usando subnets privadas em pelo menos duas zonas de disponibilidade.
+
 As credenciais master do Aurora são criadas pelo RDS e armazenadas no Secrets Manager. O ECS injeta somente `username` e `password`; nenhuma senha é armazenada no Terraform ou na task definition.
 
 ## IAM
