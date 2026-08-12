@@ -1,7 +1,8 @@
-name: CI/CD
+name: CI educacional
 
 on:
   pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -64,12 +65,9 @@ jobs:
           version: v0.73.0
 
   image:
-    name: Imagem e deploy
+    name: Build e scan das imagens (sem publicacao)
     needs: quality
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v6
 
@@ -114,63 +112,3 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           version: v0.73.0
-
-      - name: Configurar credenciais AWS por OIDC
-        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Login no ECR
-        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Publicar imagem no ECR
-        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          SHA: ${{ github.sha }}
-        run: |
-          docker tag "case-nota-fiscal:${SHA}" "${REGISTRY}/${REPOSITORY}:${SHA}"
-          docker tag "case-nota-fiscal:${SHA}" "${REGISTRY}/${REPOSITORY}:latest"
-          docker push "${REGISTRY}/${REPOSITORY}:${SHA}"
-          docker push "${REGISTRY}/${REPOSITORY}:latest"
-
-      - name: Implantar no ECS Fargate
-        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          SHA: ${{ github.sha }}
-          CLUSTER: ${{ vars.ECS_CLUSTER }}
-          SERVICE: ${{ vars.ECS_SERVICE }}
-        run: |
-          CURRENT_TASK_DEFINITION=$(aws ecs describe-services \
-            --cluster "${CLUSTER}" --services "${SERVICE}" \
-            --query 'services[0].taskDefinition' --output text)
-          aws ecs describe-task-definition \
-            --task-definition "${CURRENT_TASK_DEFINITION}" \
-            --query taskDefinition > task-definition.json
-          jq --arg image "${REGISTRY}/${REPOSITORY}:${SHA}" '
-            del(
-              .taskDefinitionArn,
-              .revision,
-              .status,
-              .requiresAttributes,
-              .compatibilities,
-              .registeredAt,
-              .registeredBy
-            )
-            | .containerDefinitions |= map(
-                if .name == "application" then .image = $image else . end
-              )
-          ' task-definition.json > task-definition-rendered.json
-          NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
-            --cli-input-json file://task-definition-rendered.json \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          aws ecs update-service --cluster "${CLUSTER}" --service "${SERVICE}" \
-            --task-definition "${NEW_TASK_DEFINITION}"
-          aws ecs wait services-stable --cluster "${CLUSTER}" --services "${SERVICE}"

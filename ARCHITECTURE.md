@@ -124,10 +124,11 @@ flowchart TB
     ADOT --> XRAY["AWS X-Ray"]
     ECS --> LOGS["CloudWatch Logs / Container Insights"]
     LOGS --> ALARMS["Alarmes + Dashboard CloudWatch"]
-    GHA["GitHub Actions via OIDC"] --> ECR
-    GHA --> ECS
+    GHA["GitHub Actions educacional"] --> CHECKS["Build, testes, scans e imagens locais"]
 ```
 
 O ALB usa readiness para retirar targets sem encerrar o processo. O ECS envia SIGTERM e respeita o graceful shutdown. As tasks usam role própria e não recebem chaves AWS estáticas.
+
+O diagrama AWS representa a arquitetura produtiva proposta, mas a GitHub Action versionada não realiza deployment: ela não assume role AWS, não envia imagens ao ECR e não atualiza o ECS. A ativação de CD exige uma conta configurada, ambiente protegido, aprovação e credenciais OIDC próprias.
 
 Localmente, Prometheus coleta `/actuator/prometheus` e Jaeger recebe OTLP. Na AWS, CPU/memória vêm do ECS/Container Insights; o ADOT coleta JVM, processo e HTTP pelo Actuator interno e publica via EMF; logs usam `awslogs` e traces seguem para o X-Ray. As decisões complementares estão em [ADR-002](docs/ADR-002-observabilidade-e-deploy.md).

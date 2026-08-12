@@ -30,8 +30,8 @@ public class RastreabilidadeHttpFilter extends OncePerRequestFilter {
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
-        String correlationId = resolverCorrelationId(request.getHeader(CORRELATION_ID_HEADER));
-        String flowId = UUID.randomUUID().toString();
+        String correlationId = resolverIdentificador(request.getHeader(CORRELATION_ID_HEADER));
+        String flowId = resolverIdentificador(request.getHeader(FLOW_ID_HEADER));
 
         MDC.put(CORRELATION_ID_MDC, correlationId);
         MDC.put(FLOW_ID_MDC, flowId);
@@ -46,10 +46,10 @@ public class RastreabilidadeHttpFilter extends OncePerRequestFilter {
         }
     }
 
-    private String resolverCorrelationId(String correlationIdRecebido) {
-        if (correlationIdRecebido != null
-                && IDENTIFICADOR_SEGURO.matcher(correlationIdRecebido).matches()) {
-            return correlationIdRecebido;
+    private String resolverIdentificador(String identificadorRecebido) {
+        if (identificadorRecebido != null
+                && IDENTIFICADOR_SEGURO.matcher(identificadorRecebido).matches()) {
+            return identificadorRecebido;
         }
         return UUID.randomUUID().toString();
     }

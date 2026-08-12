@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Mantem a infraestrutura local deterministica em Linux e Docker Desktop.
 set -euo pipefail
 
 region="us-east-1"

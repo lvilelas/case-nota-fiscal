@@ -31,20 +31,23 @@ public class ConsumerLifecycle implements SmartLifecycle {
 
     @Override
     public synchronized void start() {
-        if (!running.compareAndSet(false, true)) {
+        if (running.get()) {
             return;
         }
-        executor = Executors.newThreadPerTaskExecutor(
-                Thread.ofVirtual().name("sqs-listener-", 0).factory());
-        properties.type().selectedConsumers().forEach(type -> {
-            NotaFiscalSqsListener listener = listeners.get(type);
-            if (listener == null) {
+        var selectedConsumers = properties.type().selectedConsumers();
+        selectedConsumers.forEach(type -> {
+            if (!listeners.containsKey(type)) {
                 throw new IllegalStateException("Listener nao implementado para " + type);
             }
-            executor.submit(() -> listener.listen(running::get));
         });
+
+        executor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("sqs-listener-", 0).factory());
+        running.set(true);
+        selectedConsumers.forEach(type ->
+                executor.submit(() -> listeners.get(type).listen(running::get)));
         LOGGER.info("Consumidores iniciados: mode={}, selected={}",
-                properties.type(), properties.type().selectedConsumers());
+                properties.type(), selectedConsumers);
     }
 
     @Override

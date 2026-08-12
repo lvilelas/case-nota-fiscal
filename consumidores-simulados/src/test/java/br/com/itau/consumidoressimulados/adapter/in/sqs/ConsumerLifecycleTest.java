@@ -65,6 +65,7 @@ class ConsumerLifecycleTest {
         assertThatThrownBy(lifecycle::start)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Listener nao implementado para REGISTRO");
+        assertThat(lifecycle.isRunning()).isFalse();
         lifecycle.stop();
     }
 }

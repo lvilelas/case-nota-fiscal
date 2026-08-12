@@ -17,4 +17,4 @@ python performance/assert_results.py performance/results.jtl
 
 Para comparar commits, execute o mesmo plano, volume e limites em cada revisão e preserve os relatórios como artefatos do pipeline. O resultado não deve ser comparado entre máquinas diferentes sem normalizar CPU, memória e banco.
 
-Validação local desta entrega (Docker Desktop, 2026-08-11): 100 pedidos com sete itens, 0% de erro, p95 de 39 ms e máximo de 85 ms. Esse número demonstra o atendimento do gate neste ambiente; o relatório de cada execução do GitHub Actions é a evidência reproduzível e não deve ser tratado como SLA de produção.
+Validação local desta entrega (Docker Desktop, 2026-08-12 02:45 UTC): 1.000 pedidos com sete itens, 50 usuários virtuais, 20 iterações por usuário e ramp-up de 10 segundos. Foram observados 0% de erro, média de 55,13 ms, p95 de 156,90 ms, máximo de 503 ms e vazão de 109,55 requisições/s. Esse número demonstra o atendimento do gate neste ambiente; o relatório de cada execução do GitHub Actions é a evidência reproduzível e não deve ser tratado como SLA de produção.

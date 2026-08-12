@@ -36,21 +36,15 @@ As credenciais master do Aurora são criadas pelo RDS e armazenadas no Secrets M
 
 - `ecs_execution`: pull no ECR, logs e injeção do secret do banco.
 - `ecs_task`: `sns:Publish`, leitura do secret da aplicação, exportação ao X-Ray e escrita EMF no log group de métricas.
-- `github_actions`: opcional, assumida por OIDC somente pela branch `main`, com push no ECR, registro de task definition e deploy do serviço.
+- `github_actions`: role opcional deixada apenas como proposta de uma futura etapa de CD; ela não é utilizada pela pipeline educacional atual.
 
 Para criar a role do pipeline, informe `github_repository` e o ARN do provider OIDC já existente na conta. Um provider OIDC é compartilhado por conta e, por isso, não é criado automaticamente por este módulo.
 
 ## GitHub Actions
 
-Configure como Repository Variables:
+A action atual é somente de integração contínua e não precisa de variáveis, secrets ou ambiente AWS. Ela executa build, testes, cobertura, secret scanning, análise de vulnerabilidades e build/scan local das imagens com `push: false`.
 
-- `AWS_ROLE_ARN`: output `github_actions_role_arn`;
-- `AWS_REGION`;
-- `ECR_REPOSITORY`: nome retornado pelo ECR, por exemplo `prod-nota-fiscal`;
-- `ECS_CLUSTER`: output `ecs_cluster_name`;
-- `ECS_SERVICE`: output `ecs_service_name`.
-
-O pipeline publica `latest` e uma tag imutável pelo SHA. Cada deploy registra uma nova revisão da task definition apontando para o SHA; assim auditoria e rollback não dependem de uma tag mutável.
+A infraestrutura de ECR/ECS e a role OIDC permanecem no Terraform para demonstrar como um CD futuro poderia ser construído, mas não há workflow que as utilize. Um eventual deploy deve ficar em workflow separado, vinculado a um GitHub Environment protegido e habilitado somente quando existir uma conta AWS de destino.
 
 ## Observabilidade
 
