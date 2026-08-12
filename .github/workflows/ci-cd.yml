@@ -54,7 +54,7 @@ jobs:
           git /repo --verbose
 
       - name: Vulnerabilidades e configurações inseguras
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -96,7 +96,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=consumidores
 
       - name: Analisar imagem
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: case-nota-fiscal:${{ github.sha }}
           severity: HIGH,CRITICAL
@@ -105,7 +105,7 @@ jobs:
           version: v0.73.0
 
       - name: Analisar imagem dos consumidores
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: case-nota-fiscal-consumidores:${{ github.sha }}
           severity: HIGH,CRITICAL
