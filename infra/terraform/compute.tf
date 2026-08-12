@@ -57,7 +57,7 @@ locals {
 
 resource "aws_ecr_repository" "application" {
   name                 = local.application_name
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
@@ -99,8 +99,6 @@ resource "aws_vpc_security_group_ingress_rule" "alb_http" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_https" {
-  count = var.acm_certificate_arn == "" ? 0 : 1
-
   security_group_id = aws_security_group.alb.id
   cidr_ipv4         = "0.0.0.0/0"
   from_port         = 443
@@ -130,18 +128,61 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_tasks" {
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_egress_rule" "tasks_outbound" {
+resource "aws_vpc_security_group_egress_rule" "tasks_https_outbound" {
   security_group_id = aws_security_group.ecs_tasks.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
+  cidr_ipv4         = data.aws_vpc.selected.cidr_block
+  description       = "HTTPS para VPC endpoints privados"
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
 }
 
+resource "aws_vpc_security_group_egress_rule" "tasks_s3" {
+  security_group_id = aws_security_group.ecs_tasks.id
+  prefix_list_id    = data.aws_prefix_list.s3.id
+  description       = "HTTPS para S3 pelo gateway endpoint usado pelo ECR"
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+}
+
+# A conexao com o banco fica restrita ao security group do Aurora.
+resource "aws_vpc_security_group_egress_rule" "tasks_to_aurora" {
+  security_group_id            = aws_security_group.ecs_tasks.id
+  referenced_security_group_id = aws_security_group.aurora.id
+  description                  = "PostgreSQL para o Aurora"
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "tasks_dns_udp" {
+  security_group_id = aws_security_group.ecs_tasks.id
+  cidr_ipv4         = data.aws_vpc.selected.cidr_block
+  description       = "Resolucao DNS dentro da VPC"
+  from_port         = 53
+  to_port           = 53
+  ip_protocol       = "udp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "tasks_dns_tcp" {
+  security_group_id = aws_security_group.ecs_tasks.id
+  cidr_ipv4         = data.aws_vpc.selected.cidr_block
+  description       = "Fallback DNS TCP dentro da VPC"
+  from_port         = 53
+  to_port           = 53
+  ip_protocol       = "tcp"
+}
+
+# O ALB e intencionalmente publico: ele e o ponto de entrada HTTPS da API.
+#trivy:ignore:AWS-0053
 resource "aws_lb" "application" {
-  name               = substr("${local.application_name}-alb", 0, 32)
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = var.public_subnet_ids
+  name                       = substr("${local.application_name}-alb", 0, 32)
+  internal                   = false
+  load_balancer_type         = "application"
+  drop_invalid_header_fields = true
+  security_groups            = [aws_security_group.alb.id]
+  subnets                    = var.public_subnet_ids
 }
 
 resource "aws_lb_target_group" "application" {
@@ -168,31 +209,17 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type = var.acm_certificate_arn == "" ? "forward" : "redirect"
+    type = "redirect"
 
-    dynamic "forward" {
-      for_each = var.acm_certificate_arn == "" ? [1] : []
-      content {
-        target_group {
-          arn = aws_lb_target_group.application.arn
-        }
-      }
-    }
-
-    dynamic "redirect" {
-      for_each = var.acm_certificate_arn == "" ? [] : [1]
-      content {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
     }
   }
 }
 
 resource "aws_lb_listener" "https" {
-  count = var.acm_certificate_arn == "" ? 0 : 1
-
   load_balancer_arn = aws_lb.application.arn
   port              = 443
   protocol          = "HTTPS"
@@ -343,7 +370,7 @@ resource "aws_ecs_service" "application" {
     container_port   = local.container_port
   }
 
-  depends_on = [aws_lb_listener.http, aws_lb_listener.https]
+  depends_on = [aws_lb_listener.https]
 }
 
 resource "aws_appautoscaling_target" "ecs" {

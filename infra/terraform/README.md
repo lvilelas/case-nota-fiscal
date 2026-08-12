@@ -1,14 +1,15 @@
 # Infraestrutura AWS com Terraform
 
-O módulo provisiona ECR, ALB, ECS/Fargate, IAM, Aurora PostgreSQL Serverless v2, SNS, quatro SQS/DLQs, Secrets Manager, autoscaling, ADOT/X-Ray, CloudWatch Logs, alarmes e dashboard.
+O módulo provisiona ECR, ALB, ECS/Fargate, IAM, Aurora PostgreSQL Serverless v2, SNS, quatro SQS/DLQs, Secrets Manager, KMS, autoscaling, ADOT/X-Ray, CloudWatch Logs, alarmes e dashboard.
 
 ## Pré-requisitos de rede
 
 - VPC existente;
 - ao menos duas subnets públicas para o ALB;
 - ao menos duas subnets privadas para Fargate e Aurora;
-- NAT Gateway ou VPC endpoints nas subnets privadas para ECR, Logs, Secrets Manager, SNS e X-Ray;
-- certificado ACM para HTTPS, exceto em ambiente efêmero de demonstração.
+- interface VPC endpoints nas subnets privadas para ECR API/DKR, Logs, Secrets Manager, SNS, X-Ray e KMS;
+- gateway VPC endpoint para S3, necessário para baixar as camadas das imagens do ECR;
+- certificado ACM para HTTPS; HTTP existe somente para redirecionar para TLS.
 
 ## Execução
 
@@ -31,6 +32,10 @@ terraform apply -var-file=environments/prod.tfvars
 Copie `environments/prod.tfvars.example` para `environments/prod.tfvars` e preencha os identificadores reais. Duas instâncias permitem failover do writer; o cluster continua usando subnets privadas em pelo menos duas zonas de disponibilidade.
 
 As credenciais master do Aurora são criadas pelo RDS e armazenadas no Secrets Manager. O ECS injeta somente `username` e `password`; nenhuma senha é armazenada no Terraform ou na task definition.
+
+Os tópicos de eventos e alarmes usam uma chave KMS customer-managed exclusiva por ambiente, com rotação habilitada e janela de exclusão de 30 dias. A policy permite administração pela conta e uso criptográfico somente pelo SNS e pelo CloudWatch da própria conta; a task da aplicação recebe apenas `Decrypt` e `GenerateDataKey` nessa chave. O Aurora usa outra CMK, isolando dados e mensageria. Essa escolha elimina chaves AWS-managed nesses recursos, mas gera o custo mensal de duas CMKs quando a infraestrutura for aplicada na AWS.
+
+O ALB é público por decisão arquitetural, pois representa a entrada da API; o finding `AWS-0053` é suprimido somente nesse recurso e documentado ao lado dele. Headers inválidos são descartados, a porta 80 apenas redireciona para HTTPS e o certificado ACM é obrigatório. As tasks não possuem mais egress irrestrito: acessam HTTPS somente dentro do CIDR da VPC, S3 pela prefix list gerenciada, DNS dentro da VPC e PostgreSQL exclusivamente para o security group do Aurora. Por isso, os VPC endpoints listados acima passam a ser obrigatórios, não apenas uma alternativa ao NAT.
 
 ## IAM
 

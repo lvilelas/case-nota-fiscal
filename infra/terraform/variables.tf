@@ -25,12 +25,6 @@ variable "max_receive_count" {
   }
 }
 
-variable "sns_kms_key_id" {
-  description = "Chave KMS usada para criptografar o topico SNS."
-  type        = string
-  default     = "alias/aws/sns"
-}
-
 variable "vpc_id" {
   description = "VPC onde o Aurora sera provisionado."
   type        = string
@@ -57,9 +51,13 @@ variable "public_subnet_ids" {
 }
 
 variable "acm_certificate_arn" {
-  description = "Certificado ACM do listener HTTPS. Vazio habilita apenas HTTP para ambientes efemeros."
+  description = "Certificado ACM obrigatorio para o listener HTTPS."
   type        = string
-  default     = ""
+
+  validation {
+    condition     = can(regex("^arn:[^:]+:acm:[^:]+:[0-9]{12}:certificate/.+$", var.acm_certificate_arn))
+    error_message = "acm_certificate_arn deve ser um ARN valido de certificado ACM."
+  }
 }
 
 variable "container_image_tag" {

@@ -3,6 +3,16 @@ output "nota_fiscal_gerada_topic_arn" {
   value       = aws_sns_topic.nota_fiscal_gerada.arn
 }
 
+output "sns_kms_key_arn" {
+  description = "ARN da chave KMS customer-managed usada pelos topicos SNS."
+  value       = aws_kms_key.sns.arn
+}
+
+output "aurora_kms_key_arn" {
+  description = "ARN da chave KMS customer-managed usada pelo Aurora."
+  value       = aws_kms_key.aurora.arn
+}
+
 output "consumer_queue_urls" {
   description = "URLs das filas dos consumidores."
   value       = { for name, queue in aws_sqs_queue.consumer : name => queue.id }
@@ -61,7 +71,7 @@ output "ecs_service_name" {
 
 output "application_url" {
   description = "URL publica do Application Load Balancer."
-  value       = var.acm_certificate_arn == "" ? "http://${aws_lb.application.dns_name}" : "https://${aws_lb.application.dns_name}"
+  value       = "https://${aws_lb.application.dns_name}"
 }
 
 output "cloudwatch_dashboard_name" {

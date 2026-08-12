@@ -48,6 +48,15 @@ data "aws_iam_policy_document" "ecs_task" {
   }
 
   statement {
+    sid = "EncryptNotaFiscalTopic"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey*"
+    ]
+    resources = [aws_kms_key.sns.arn]
+  }
+
+  statement {
     sid       = "ReadApplicationSecret"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [aws_secretsmanager_secret.application.arn]

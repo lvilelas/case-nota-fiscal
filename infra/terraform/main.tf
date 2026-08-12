@@ -4,7 +4,7 @@ locals {
 
 resource "aws_sns_topic" "nota_fiscal_gerada" {
   name              = "${var.environment}-nota-fiscal-gerada"
-  kms_master_key_id = var.sns_kms_key_id
+  kms_master_key_id = aws_kms_key.sns.arn
 }
 
 resource "aws_sqs_queue" "dead_letter" {
@@ -124,6 +124,7 @@ resource "aws_rds_cluster" "nota_fiscal" {
   db_subnet_group_name        = aws_db_subnet_group.aurora.name
   vpc_security_group_ids      = [aws_security_group.aurora.id]
   storage_encrypted           = true
+  kms_key_id                  = aws_kms_key.aurora.arn
   backup_retention_period     = var.database_backup_retention_days
   preferred_backup_window     = "03:00-04:00"
   deletion_protection         = var.environment == "prod"
