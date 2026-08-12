@@ -54,11 +54,11 @@ O transactional outbox evita o dual-write banco/SNS:
 1. calcula a nota;
 2. grava a resposta idempotente e o evento `PENDENTE` em uma única transação;
 3. responde a API após o commit;
-4. o relay reserva eventos com `FOR UPDATE SKIP LOCKED`;
-5. publica no SNS e marca `PUBLICADO`;
+4. o relay reserva eventos com `FOR UPDATE SKIP LOCKED`, atribui um `lock_token` e renova o lease antes da publicação;
+5. publica no SNS e marca `PUBLICADO` somente se ainda possuir o mesmo token;
 6. em falha, reagenda com exponential backoff; ao esgotar tentativas, marca `FALHA`.
 
-Se o processo cair depois de publicar e antes de confirmar no banco, o evento poderá ser reenviado. Isso é esperado em uma entrega *at least once*: cada consumidor deve persistir a `idempotency_key` atomicamente com seu efeito. O banco do produtor garante uma nota/outbox por pedido, mas não substitui a idempotência de estoque, registro, entrega e financeiro.
+Se o lease expirar, outro worker poderá reservar o evento com um token novo. O token anterior não consegue mais confirmar, reagendar ou marcar falha, impedindo que um worker vencido sobrescreva o estado atual. Se o processo cair depois de publicar e antes de confirmar no banco, o evento ainda poderá ser reenviado. Isso é esperado em uma entrega *at least once*: cada consumidor deve persistir a `idempotency_key` atomicamente com seu efeito. O banco do produtor garante uma nota/outbox por pedido, mas não substitui a idempotência de estoque, registro, entrega e financeiro.
 
 ## Contrato HTTP e erros
 

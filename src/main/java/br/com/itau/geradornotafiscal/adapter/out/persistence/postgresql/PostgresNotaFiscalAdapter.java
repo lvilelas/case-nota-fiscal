@@ -56,6 +56,7 @@ public class PostgresNotaFiscalAdapter implements NotaFiscalIdempotenciaPort, Ou
 
     @Override
     public List<RegistroOutbox> reservarPendentes(int limite, Duration duracaoBloqueio) {
+        UUID tokenReserva = UUID.randomUUID();
         try {
             return Objects.requireNonNull(transactionTemplate.execute(status -> jdbcTemplate.query("""
                     WITH candidatos AS (
@@ -69,58 +70,84 @@ public class PostgresNotaFiscalAdapter implements NotaFiscalIdempotenciaPort, Ou
                     )
                     UPDATE outbox_evento AS outbox
                     SET status = 'PROCESSANDO',
-                        bloqueado_ate = CURRENT_TIMESTAMP + (? * INTERVAL '1 millisecond')
+                        bloqueado_ate = CURRENT_TIMESTAMP + (? * INTERVAL '1 millisecond'),
+                        lock_token = ?
                     FROM candidatos
                     WHERE outbox.event_id = candidatos.event_id
-                    RETURNING outbox.payload, outbox.tentativas
+                    RETURNING outbox.payload, outbox.tentativas, outbox.lock_token
                     """, (resultSet, rowNum) -> new RegistroOutbox(
                     desserializar(resultSet.getString("payload"), NotaFiscalGeradaEvent.class),
-                    resultSet.getInt("tentativas")),
+                    resultSet.getInt("tentativas"),
+                    resultSet.getString("lock_token")),
                     limite,
-                    duracaoBloqueio.toMillis())));
+                    duracaoBloqueio.toMillis(),
+                    tokenReserva)));
         } catch (RuntimeException exception) {
             throw traduzir("Falha ao reservar eventos da outbox", exception);
         }
     }
 
     @Override
-    public void marcarPublicado(String eventId) {
-        executarAtualizacao(
+    public boolean renovarReserva(String eventId, String tokenReserva, Duration duracaoBloqueio) {
+        return executarAtualizacao(
                 """
                 UPDATE outbox_evento
-                SET status = 'PUBLICADO', publicado_em = CURRENT_TIMESTAMP, bloqueado_ate = NULL, ultimo_erro = NULL
-                WHERE event_id = ?
+                SET bloqueado_ate = CURRENT_TIMESTAMP + (? * INTERVAL '1 millisecond')
+                WHERE event_id = ? AND status = 'PROCESSANDO' AND lock_token = ?
                 """,
-                "Falha ao confirmar publicação da outbox",
-                UUID.fromString(eventId));
+                "Falha ao renovar reserva da outbox",
+                duracaoBloqueio.toMillis(),
+                UUID.fromString(eventId),
+                UUID.fromString(tokenReserva));
     }
 
     @Override
-    public void reagendar(String eventId, OffsetDateTime proximaTentativa, String motivo) {
-        executarAtualizacao(
+    public boolean marcarPublicado(String eventId, String tokenReserva) {
+        return executarAtualizacao(
+                """
+                UPDATE outbox_evento
+                SET status = 'PUBLICADO', publicado_em = CURRENT_TIMESTAMP, bloqueado_ate = NULL,
+                    lock_token = NULL, ultimo_erro = NULL
+                WHERE event_id = ? AND status = 'PROCESSANDO' AND lock_token = ?
+                """,
+                "Falha ao confirmar publicação da outbox",
+                UUID.fromString(eventId),
+                UUID.fromString(tokenReserva));
+    }
+
+    @Override
+    public boolean reagendar(
+            String eventId,
+            String tokenReserva,
+            OffsetDateTime proximaTentativa,
+            String motivo) {
+        return executarAtualizacao(
                 """
                 UPDATE outbox_evento
                 SET status = 'PENDENTE', tentativas = tentativas + 1, proxima_tentativa_em = ?,
-                    bloqueado_ate = NULL, ultimo_erro = ?
-                WHERE event_id = ?
+                    bloqueado_ate = NULL, lock_token = NULL, ultimo_erro = ?
+                WHERE event_id = ? AND status = 'PROCESSANDO' AND lock_token = ?
                 """,
                 "Falha ao reagendar evento da outbox",
                 proximaTentativa,
                 limitar(motivo),
-                UUID.fromString(eventId));
+                UUID.fromString(eventId),
+                UUID.fromString(tokenReserva));
     }
 
     @Override
-    public void marcarFalhaDefinitiva(String eventId, String motivo) {
-        executarAtualizacao(
+    public boolean marcarFalhaDefinitiva(String eventId, String tokenReserva, String motivo) {
+        return executarAtualizacao(
                 """
                 UPDATE outbox_evento
-                SET status = 'FALHA', tentativas = tentativas + 1, bloqueado_ate = NULL, ultimo_erro = ?
-                WHERE event_id = ?
+                SET status = 'FALHA', tentativas = tentativas + 1, bloqueado_ate = NULL,
+                    lock_token = NULL, ultimo_erro = ?
+                WHERE event_id = ? AND status = 'PROCESSANDO' AND lock_token = ?
                 """,
                 "Falha ao marcar erro definitivo da outbox",
                 limitar(motivo),
-                UUID.fromString(eventId));
+                UUID.fromString(eventId),
+                UUID.fromString(tokenReserva));
     }
 
     private NotaFiscal salvarNaTransacao(NotaFiscalGeradaEvent evento) {
@@ -161,9 +188,9 @@ public class PostgresNotaFiscalAdapter implements NotaFiscalIdempotenciaPort, Ou
                 .findFirst();
     }
 
-    private void executarAtualizacao(String sql, String mensagem, Object... parametros) {
+    private boolean executarAtualizacao(String sql, String mensagem, Object... parametros) {
         try {
-            jdbcTemplate.update(sql, parametros);
+            return jdbcTemplate.update(sql, parametros) == 1;
         } catch (RuntimeException exception) {
             throw traduzir(mensagem, exception);
         }

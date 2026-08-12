@@ -45,7 +45,7 @@ WHERE event_id = '<event-id>';
 UPDATE outbox_evento
 SET status = 'PENDENTE', tentativas = 0,
     proxima_tentativa_em = CURRENT_TIMESTAMP,
-    bloqueado_ate = NULL, ultimo_erro = NULL
+    bloqueado_ate = NULL, lock_token = NULL, ultimo_erro = NULL
 WHERE event_id = '<event-id>' AND status = 'FALHA';
 ```
 

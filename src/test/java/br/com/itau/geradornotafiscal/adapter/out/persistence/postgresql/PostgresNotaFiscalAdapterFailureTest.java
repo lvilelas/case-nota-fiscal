@@ -89,7 +89,9 @@ class PostgresNotaFiscalAdapterFailureTest {
                 .thenThrow(new RuntimeException("banco indisponivel"));
 
         assertThrows(PersistenciaNotaFiscalException.class,
-                () -> adapter.marcarPublicado("00000000-0000-0000-0000-000000000001"));
+                () -> adapter.marcarPublicado(
+                        "00000000-0000-0000-0000-000000000001",
+                        "00000000-0000-0000-0000-000000000099"));
     }
 
     private NotaFiscalGeradaEvent evento() {

@@ -9,9 +9,11 @@ import java.util.List;
 public interface OutboxNotaFiscalPort {
     List<RegistroOutbox> reservarPendentes(int limite, Duration duracaoBloqueio);
 
-    void marcarPublicado(String eventId);
+    boolean renovarReserva(String eventId, String tokenReserva, Duration duracaoBloqueio);
 
-    void reagendar(String eventId, OffsetDateTime proximaTentativa, String motivo);
+    boolean marcarPublicado(String eventId, String tokenReserva);
 
-    void marcarFalhaDefinitiva(String eventId, String motivo);
+    boolean reagendar(String eventId, String tokenReserva, OffsetDateTime proximaTentativa, String motivo);
+
+    boolean marcarFalhaDefinitiva(String eventId, String tokenReserva, String motivo);
 }

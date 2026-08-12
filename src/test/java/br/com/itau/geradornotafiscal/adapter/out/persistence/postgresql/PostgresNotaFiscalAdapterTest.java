@@ -23,6 +23,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers(disabledWithoutDocker = true)
@@ -106,8 +108,12 @@ class PostgresNotaFiscalAdapterTest {
         assertEquals(1, reservados.size());
         assertEquals(evento.eventId(), reservados.getFirst().evento().eventId());
         assertTrue(adapter.reservarPendentes(10, Duration.ofSeconds(30)).isEmpty());
+        assertTrue(adapter.renovarReserva(
+                evento.eventId(),
+                reservados.getFirst().tokenReserva(),
+                Duration.ofSeconds(30)));
 
-        adapter.marcarPublicado(evento.eventId());
+        assertTrue(adapter.marcarPublicado(evento.eventId(), reservados.getFirst().tokenReserva()));
 
         assertEquals("PUBLICADO", buscarStatus(evento.eventId()));
         assertTrue(adapter.reservarPendentes(10, Duration.ofSeconds(30)).isEmpty());
@@ -117,9 +123,13 @@ class PostgresNotaFiscalAdapterTest {
     void deveReagendarEventoERecuperarLockExpirado() {
         var evento = evento(40, "00000000-0000-0000-0000-000000000061", "00000000-0000-0000-0000-000000000071");
         adapter.salvarSeAusente(evento);
-        adapter.reservarPendentes(1, Duration.ofSeconds(30));
+        var reservado = adapter.reservarPendentes(1, Duration.ofSeconds(30)).getFirst();
 
-        adapter.reagendar(evento.eventId(), OffsetDateTime.now().minusSeconds(1), "SNS indisponivel");
+        assertTrue(adapter.reagendar(
+                evento.eventId(),
+                reservado.tokenReserva(),
+                OffsetDateTime.now().minusSeconds(1),
+                "SNS indisponivel"));
         var reagendado = adapter.reservarPendentes(1, Duration.ofMillis(1));
         assertEquals(1, reagendado.size());
         assertEquals(1, reagendado.getFirst().tentativas());
@@ -134,9 +144,10 @@ class PostgresNotaFiscalAdapterTest {
     void deveMarcarFalhaDefinitivaELimitarMotivo() {
         var evento = evento(50, "00000000-0000-0000-0000-000000000081", "00000000-0000-0000-0000-000000000091");
         adapter.salvarSeAusente(evento);
+        var reservado = adapter.reservarPendentes(1, Duration.ofSeconds(30)).getFirst();
         String motivoLongo = "x".repeat(1100);
 
-        adapter.marcarFalhaDefinitiva(evento.eventId(), motivoLongo);
+        assertTrue(adapter.marcarFalhaDefinitiva(evento.eventId(), reservado.tokenReserva(), motivoLongo));
 
         assertEquals("FALHA", buscarStatus(evento.eventId()));
         assertEquals(1000, jdbcTemplate.queryForObject(
@@ -144,6 +155,38 @@ class PostgresNotaFiscalAdapterTest {
                 Integer.class,
                 UUID.fromString(evento.eventId())));
         assertTrue(adapter.buscarPorPedidoId(999).isEmpty());
+    }
+
+    @Test
+    void deveImpedirWorkerVencidoDeSobrescreverEstadoDaOutbox() {
+        var evento = evento(60, "00000000-0000-0000-0000-000000000101", "00000000-0000-0000-0000-000000000111");
+        adapter.salvarSeAusente(evento);
+        var reservaVencida = adapter.reservarPendentes(1, Duration.ofSeconds(30)).getFirst();
+
+        jdbcTemplate.update(
+                "UPDATE outbox_evento SET bloqueado_ate = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE event_id = ?",
+                UUID.fromString(evento.eventId()));
+        var reservaAtual = adapter.reservarPendentes(1, Duration.ofSeconds(30)).getFirst();
+
+        assertNotEquals(reservaVencida.tokenReserva(), reservaAtual.tokenReserva());
+        assertFalse(adapter.renovarReserva(
+                evento.eventId(),
+                reservaVencida.tokenReserva(),
+                Duration.ofSeconds(30)));
+        assertFalse(adapter.marcarPublicado(evento.eventId(), reservaVencida.tokenReserva()));
+        assertFalse(adapter.reagendar(
+                evento.eventId(),
+                reservaVencida.tokenReserva(),
+                OffsetDateTime.now(),
+                "worker vencido"));
+        assertFalse(adapter.marcarFalhaDefinitiva(
+                evento.eventId(),
+                reservaVencida.tokenReserva(),
+                "worker vencido"));
+        assertEquals("PROCESSANDO", buscarStatus(evento.eventId()));
+
+        assertTrue(adapter.marcarPublicado(evento.eventId(), reservaAtual.tokenReserva()));
+        assertEquals("PUBLICADO", buscarStatus(evento.eventId()));
     }
 
     private int contar(String tabela) {
