@@ -1,0 +1,16 @@
+environment       = "dev"
+aws_region        = "us-east-1"
+max_receive_count = 3
+vpc_id                       = "vpc-00000000000000000"
+private_subnet_ids           = ["subnet-00000000000000001", "subnet-00000000000000002"]
+public_subnet_ids            = ["subnet-00000000000000003", "subnet-00000000000000004"]
+acm_certificate_arn          = "arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000"
+aurora_min_capacity          = 0.5
+aurora_max_capacity          = 4
+aurora_instance_count        = 1
+ecs_desired_count            = 2
+ecs_min_capacity             = 2
+ecs_max_capacity             = 6
+otel_sampling_probability    = 0.1
+github_repository            = "sua-organizacao/case-nota-fiscal"
+github_oidc_provider_arn     = "arn:aws:iam::000000000000:oidc-provider/token.actions.githubusercontent.com"

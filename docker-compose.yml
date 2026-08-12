@@ -1,0 +1,125 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: case-nota-fiscal:local
+    container_name: case-nota-fiscal-app
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/nota_fiscal
+      DB_USERNAME: nota_fiscal_app
+      DB_PASSWORD: local-only
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_SNS_NOTA_FISCAL_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:nota-fiscal-gerada
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://jaeger:4318/v1/traces
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 12
+    stop_grace_period: 35s
+
+  consumidores-simulados:
+    build:
+      context: .
+      dockerfile: consumidores-simulados/Dockerfile
+    image: case-nota-fiscal-consumidores:local
+    container_name: case-nota-fiscal-consumidores
+    ports:
+      - "${CONSUMER_PORT:-8081}:8081"
+    environment:
+      CONSUMER_TYPE: ${CONSUMER_TYPE:-ALL}
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 20s
+      retries: 12
+    stop_grace_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: case-nota-fiscal-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: nota_fiscal
+      POSTGRES_USER: nota_fiscal_app
+      POSTGRES_PASSWORD: local-only
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nota_fiscal_app -d nota_fiscal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  localstack:
+    image: localstack/localstack:4.14.0
+    container_name: case-nota-fiscal-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: sns,sqs,secretsmanager
+      AWS_DEFAULT_REGION: us-east-1
+      DEBUG: ${LOCALSTACK_DEBUG:-0}
+    volumes:
+      - ./infra/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/init/ready | grep -q '\"completed\": true'"]
+      interval: 30s
+      start_interval: 2s
+      start_period: 5s
+      timeout: 3s
+      retries: 30
+
+  prometheus:
+    image: prom/prometheus:v3.11.3
+    container_name: case-nota-fiscal-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      app:
+        condition: service_healthy
+      consumidores-simulados:
+        condition: service_healthy
+
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
+    container_name: case-nota-fiscal-jaeger
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "16686:16686"
+
+volumes:
+  postgres_data:
+  prometheus_data:

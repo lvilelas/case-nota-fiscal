@@ -1,0 +1,5 @@
+bucket       = "nome-do-bucket-de-state"
+key          = "case-nota-fiscal/dev/messaging.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true

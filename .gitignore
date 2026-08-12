@@ -1,5 +1,15 @@
 HELP.md
 target/
+.env
+.env.local
+.terraform/
+*.tfstate
+*.tfstate.*
+infra/terraform/backend.hcl
+infra/terraform/backend.tf
+infra/terraform/terraform.tfvars
+performance/results*.jtl
+performance/report/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
