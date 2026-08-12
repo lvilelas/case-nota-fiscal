@@ -7,7 +7,7 @@ RUN mvn --batch-mode --no-transfer-progress dependency:go-offline
 COPY src ./src
 RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 
-FROM eclipse-temurin:21-jre-alpine-3.23 AS runtime
+FROM eclipse-temurin:24-jre-alpine-3.22 AS runtime
 
 RUN apk upgrade --no-cache \
     && addgroup -S -g 10001 appgroup \
