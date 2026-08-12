@@ -43,3 +43,33 @@ output "aurora_master_secret_arn" {
   value       = aws_rds_cluster.nota_fiscal.master_user_secret[0].secret_arn
   sensitive   = true
 }
+
+output "ecr_repository_url" {
+  description = "Repositorio que recebe a imagem da aplicacao."
+  value       = aws_ecr_repository.application.repository_url
+}
+
+output "ecs_cluster_name" {
+  description = "Cluster usado pelo workflow de deploy."
+  value       = aws_ecs_cluster.application.name
+}
+
+output "ecs_service_name" {
+  description = "Servico usado pelo workflow de deploy."
+  value       = aws_ecs_service.application.name
+}
+
+output "application_url" {
+  description = "URL publica do Application Load Balancer."
+  value       = var.acm_certificate_arn == "" ? "http://${aws_lb.application.dns_name}" : "https://${aws_lb.application.dns_name}"
+}
+
+output "cloudwatch_dashboard_name" {
+  description = "Dashboard operacional da aplicacao."
+  value       = aws_cloudwatch_dashboard.application.dashboard_name
+}
+
+output "github_actions_role_arn" {
+  description = "Role OIDC configurada em AWS_ROLE_ARN no GitHub."
+  value       = length(aws_iam_role.github_actions) == 0 ? null : aws_iam_role.github_actions[0].arn
+}

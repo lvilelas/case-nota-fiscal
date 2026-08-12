@@ -107,7 +107,7 @@ resource "aws_security_group" "aurora" {
 
 resource "aws_vpc_security_group_ingress_rule" "aurora_from_application" {
   security_group_id            = aws_security_group.aurora.id
-  referenced_security_group_id = var.application_security_group_id
+  referenced_security_group_id = aws_security_group.ecs_tasks.id
   description                  = "PostgreSQL a partir da workload da aplicacao"
   from_port                    = 5432
   to_port                      = 5432

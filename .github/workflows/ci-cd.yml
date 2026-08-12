@@ -1,0 +1,151 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Build, testes e segurança
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout completo para secret scanning
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Testes e gate JaCoCo
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+
+      - name: Publicar relatório JaCoCo
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+          if-no-files-found: warn
+
+      - name: Secret scanning com Gitleaks
+        run: >-
+          docker run --rm
+          -v "$PWD:/repo"
+          zricethezav/gitleaks:v8.28.0
+          git /repo --verbose
+
+      - name: Vulnerabilidades e configurações inseguras
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          version: v0.73.0
+
+  image:
+    name: Imagem e deploy
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Construir imagem local
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: case-nota-fiscal:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Analisar imagem
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: case-nota-fiscal:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          version: v0.73.0
+
+      - name: Configurar credenciais AWS por OIDC
+        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login no ECR
+        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Publicar imagem no ECR
+        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          SHA: ${{ github.sha }}
+        run: |
+          docker tag "case-nota-fiscal:${SHA}" "${REGISTRY}/${REPOSITORY}:${SHA}"
+          docker tag "case-nota-fiscal:${SHA}" "${REGISTRY}/${REPOSITORY}:latest"
+          docker push "${REGISTRY}/${REPOSITORY}:${SHA}"
+          docker push "${REGISTRY}/${REPOSITORY}:latest"
+
+      - name: Implantar no ECS Fargate
+        if: github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          SHA: ${{ github.sha }}
+          CLUSTER: ${{ vars.ECS_CLUSTER }}
+          SERVICE: ${{ vars.ECS_SERVICE }}
+        run: |
+          CURRENT_TASK_DEFINITION=$(aws ecs describe-services \
+            --cluster "${CLUSTER}" --services "${SERVICE}" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition \
+            --task-definition "${CURRENT_TASK_DEFINITION}" \
+            --query taskDefinition > task-definition.json
+          jq --arg image "${REGISTRY}/${REPOSITORY}:${SHA}" '
+            del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )
+            | .containerDefinitions |= map(
+                if .name == "application" then .image = $image else . end
+              )
+          ' task-definition.json > task-definition-rendered.json
+          NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
+            --cli-input-json file://task-definition-rendered.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service --cluster "${CLUSTER}" --service "${SERVICE}" \
+            --task-definition "${NEW_TASK_DEFINITION}"
+          aws ecs wait services-stable --cluster "${CLUSTER}" --services "${SERVICE}"

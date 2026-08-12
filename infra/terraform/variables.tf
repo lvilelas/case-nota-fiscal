@@ -46,9 +46,85 @@ variable "private_subnet_ids" {
   }
 }
 
-variable "application_security_group_id" {
-  description = "Security group da workload autorizada a acessar o Aurora."
+variable "public_subnet_ids" {
+  description = "Subnets publicas em pelo menos duas zonas para o Application Load Balancer."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.public_subnet_ids) >= 2
+    error_message = "public_subnet_ids deve possuir pelo menos duas subnets."
+  }
+}
+
+variable "acm_certificate_arn" {
+  description = "Certificado ACM do listener HTTPS. Vazio habilita apenas HTTP para ambientes efemeros."
   type        = string
+  default     = ""
+}
+
+variable "container_image_tag" {
+  description = "Tag da imagem implantada no ECS. O pipeline publica latest e uma tag imutavel pelo SHA."
+  type        = string
+  default     = "latest"
+}
+
+variable "ecs_task_cpu" {
+  description = "CPU da task Fargate."
+  type        = number
+  default     = 512
+}
+
+variable "ecs_task_memory" {
+  description = "Memoria em MiB da task Fargate."
+  type        = number
+  default     = 1024
+}
+
+variable "ecs_desired_count" {
+  description = "Quantidade desejada inicial de tasks."
+  type        = number
+  default     = 2
+}
+
+variable "ecs_min_capacity" {
+  description = "Quantidade minima de tasks no autoscaling."
+  type        = number
+  default     = 2
+}
+
+variable "ecs_max_capacity" {
+  description = "Quantidade maxima de tasks no autoscaling."
+  type        = number
+  default     = 6
+}
+
+variable "otel_sampling_probability" {
+  description = "Probabilidade de amostragem dos traces em producao."
+  type        = number
+  default     = 0.1
+
+  validation {
+    condition     = var.otel_sampling_probability >= 0 && var.otel_sampling_probability <= 1
+    error_message = "otel_sampling_probability deve estar entre 0 e 1."
+  }
+}
+
+variable "alarm_email" {
+  description = "Email opcional para receber alarmes CloudWatch."
+  type        = string
+  default     = ""
+}
+
+variable "github_repository" {
+  description = "Repositorio no formato organizacao/repositorio para criar a role OIDC do pipeline."
+  type        = string
+  default     = ""
+}
+
+variable "github_oidc_provider_arn" {
+  description = "ARN de um provider OIDC token.actions.githubusercontent.com ja existente na conta."
+  type        = string
+  default     = ""
 }
 
 variable "database_name" {

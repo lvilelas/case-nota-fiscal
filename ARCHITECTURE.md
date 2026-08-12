@@ -60,6 +60,7 @@ Se o processo cair depois de publicar e antes de confirmar no banco, o evento po
 - `400 PAYLOAD_INVALIDO`: campo obrigatório ausente, coleção vazia ou número inválido.
 - `400 PAYLOAD_ILEGIVEL`: JSON, data ou enum que não pode ser interpretado.
 - `422 REGRA_NEGOCIO_INVALIDA`: tipo de pessoa ou regime tributário sem regra implementada.
+- `404 RECURSO_NAO_ENCONTRADO`: rota solicitada não existe.
 - `503 PERSISTENCIA_INDISPONIVEL`: não foi possível consultar ou confirmar a transação no banco.
 - `500 ERRO_INTERNO`: falha inesperada sem exposição de detalhes internos.
 
@@ -77,9 +78,9 @@ Todos os erros devolvem `correlation_id`, `flow_id`, código estável, status, m
 
 ## Ambientes e infraestrutura
 
-- `local`: PostgreSQL 16 e LocalStack via Docker Compose.
+- `local`: aplicação, PostgreSQL 16, LocalStack, Prometheus e Jaeger via Docker Compose.
 - `dev`, `homol` e `prod`: URL e credenciais do banco chegam por variáveis/injeção segura; o código JDBC e as migrations são os mesmos.
-- AWS: Terraform cria Aurora PostgreSQL Serverless v2 privado, criptografado, com credencial master gerenciada pelo RDS no Secrets Manager.
+- AWS: Terraform cria ALB, ECS/Fargate, ECR, Aurora PostgreSQL Serverless v2, IAM, mensageria e observabilidade.
 
 O PostgreSQL local não emula o mecanismo distribuído do Aurora, mas usa o mesmo protocolo, dialeto, transações e schema necessários ao código. Failover, scaling e rede multi-AZ são validados apenas em AWS.
 
@@ -92,3 +93,29 @@ O PostgreSQL local não emula o mecanismo distribuído do Aurora, mas usa o mesm
 - O gate JaCoCo exige 100% de linhas e branches por classe.
 
 A decisão está registrada em [ADR-001](docs/ADR-001-idempotencia-e-transactional-outbox.md).
+
+## Arquitetura AWS final
+
+```mermaid
+flowchart TB
+    USER["Cliente"] --> ALB["Application Load Balancer HTTPS"]
+    ALB --> ECS["ECS Service / Fargate em subnets privadas"]
+    ECR["Amazon ECR"] --> ECS
+    SECRET["Secrets Manager"] --> ECS
+    ECS --> AURORA["Aurora PostgreSQL Serverless v2"]
+    ECS --> SNS["SNS NotaFiscalGerada"]
+    SNS --> QE["SQS estoque + DLQ"]
+    SNS --> QR["SQS registro + DLQ"]
+    SNS --> QEN["SQS entrega + DLQ"]
+    SNS --> QF["SQS financeiro + DLQ"]
+    ECS --> ADOT["ADOT sidecar"]
+    ADOT --> XRAY["AWS X-Ray"]
+    ECS --> LOGS["CloudWatch Logs / Container Insights"]
+    LOGS --> ALARMS["Alarmes + Dashboard CloudWatch"]
+    GHA["GitHub Actions via OIDC"] --> ECR
+    GHA --> ECS
+```
+
+O ALB usa readiness para retirar targets sem encerrar o processo. O ECS envia SIGTERM e respeita o graceful shutdown. As tasks usam role própria e não recebem chaves AWS estáticas.
+
+Localmente, Prometheus coleta `/actuator/prometheus` e Jaeger recebe OTLP. Na AWS, CPU/memória vêm do ECS/Container Insights; o ADOT coleta JVM, processo e HTTP pelo Actuator interno e publica via EMF; logs usam `awslogs` e traces seguem para o X-Ray. As decisões complementares estão em [ADR-002](docs/ADR-002-observabilidade-e-deploy.md).

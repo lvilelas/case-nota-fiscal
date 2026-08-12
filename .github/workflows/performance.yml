@@ -1,0 +1,77 @@
+name: Performance JMeter
+
+on:
+  workflow_dispatch:
+    inputs:
+      threads:
+        description: Usuários concorrentes
+        required: true
+        default: "10"
+      iterations:
+        description: Iterações por usuário
+        required: true
+        default: "10"
+      max_p95_ms:
+        description: Limite de p95 em milissegundos
+        required: true
+        default: "1000"
+
+permissions:
+  contents: read
+
+jobs:
+  jmeter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Subir ambiente completo
+        run: docker compose -p case-nota-fiscal up -d --build
+
+      - name: Aguardar readiness
+        run: |
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://localhost:8080/actuator/health/readiness; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -p case-nota-fiscal logs app localstack postgres
+          exit 1
+
+      - name: Executar JMeter
+        run: |
+          rm -rf performance/report performance/results.jtl
+          docker run --rm --network case-nota-fiscal_default \
+            -v "$PWD/performance:/tests" \
+            alpine/jmeter:5.6.3 \
+            -n -t /tests/nota-fiscal-mais-de-seis-itens.jmx \
+            -l /tests/results.jtl -e -o /tests/report \
+            -Jhost=app -Jport=8080 \
+            -Jthreads=${{ inputs.threads }} \
+            -Jiterations=${{ inputs.iterations }}
+
+      - name: Validar p95 e taxa de erros
+        env:
+          MAX_P95_MS: ${{ inputs.max_p95_ms }}
+          MAX_ERROR_RATE: "0"
+        run: python3 performance/assert_results.py performance/results.jtl
+
+      - name: Publicar relatório JMeter
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: jmeter-report
+          path: |
+            performance/report
+            performance/results.jtl
+          if-no-files-found: warn
+
+      - name: Logs em caso de falha
+        if: failure()
+        run: docker compose -p case-nota-fiscal logs app localstack postgres
+
+      - name: Encerrar ambiente
+        if: always()
+        run: docker compose -p case-nota-fiscal down -v

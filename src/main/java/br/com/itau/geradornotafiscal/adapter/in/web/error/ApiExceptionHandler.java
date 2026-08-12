@@ -14,6 +14,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -90,6 +91,19 @@ public class ApiExceptionHandler {
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "PERSISTENCIA_INDISPONIVEL",
                 "Não foi possível persistir o processamento da nota fiscal",
+                request,
+                List.of());
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> tratarRecursoNaoEncontrado(
+            NoResourceFoundException exception,
+            HttpServletRequest request) {
+        LOGGER.warn("Recurso não encontrado: path={}", request.getRequestURI());
+        return resposta(
+                HttpStatus.NOT_FOUND,
+                "RECURSO_NAO_ENCONTRADO",
+                "O recurso solicitado não existe",
                 request,
                 List.of());
     }

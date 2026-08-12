@@ -1,39 +1,61 @@
 # Execução local
 
-## Subir PostgreSQL e serviços AWS locais
+## Opção 1: ambiente completo em containers
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 docker compose ps
 ```
 
-O Compose sobe:
+São iniciados:
 
-- PostgreSQL 16, banco `nota_fiscal`, porta `5432`;
-- LocalStack com SNS, SQS e Secrets Manager, porta `4566`;
-- tópico `nota-fiscal-gerada`;
-- filas de estoque, registro, entrega e financeiro, cada uma com DLQ;
-- secret fictício `case-nota-fiscal/local`.
+- aplicação Java 21: <http://localhost:8080>;
+- PostgreSQL 16: `localhost:5432`;
+- LocalStack SNS/SQS/Secrets: <http://localhost:4566>;
+- Prometheus: <http://localhost:9090>;
+- Jaeger: <http://localhost:16686>.
 
-Execute a aplicação com o profile `local` (já é o padrão):
+Endpoints úteis:
+
+- readiness: <http://localhost:8080/actuator/health/readiness>;
+- liveness: <http://localhost:8080/actuator/health/liveness>;
+- métricas: <http://localhost:8080/actuator/prometheus>;
+- OpenAPI JSON: <http://localhost:8080/v3/api-docs>;
+- Swagger UI: <http://localhost:8080/swagger-ui.html>.
+
+O Flyway cria automaticamente `nota_fiscal_processada` e `outbox_evento`. Prometheus coleta CPU, memória, JVM, GC, latência, throughput e erros HTTP. Os traces OTLP aparecem no Jaeger e os logs apresentam `traceId`, `spanId`, `correlationId` e `flowId`.
+
+## Opção 2: aplicação pelo IntelliJ
+
+Suba apenas as dependências:
 
 ```bash
-./mvnw spring-boot:run
+docker compose up -d postgres localstack jaeger
 ```
 
-No IntelliJ, basta preencher **Active profiles** com `local`. Os defaults locais apontam para os containers. A migration Flyway cria automaticamente `nota_fiscal_processada` e `outbox_evento`.
+No IntelliJ, use **Active profiles** = `local` e execute `GeradorNotaFiscalApplication`. Não suba o serviço `app` ao mesmo tempo, pois ambos usam a porta 8080.
 
-Para inspecionar a idempotência:
+## Idempotência e filas
+
+Envie duas vezes um payload com o mesmo `id_pedido`. As respostas devem possuir o mesmo `id_nota_fiscal`, com apenas uma nota e um evento no banco:
 
 ```bash
-docker exec -it case-nota-fiscal-postgres psql -U nota_fiscal_app -d nota_fiscal \
-  -c "select pedido_id, nota_fiscal_id, criado_em from nota_fiscal_processada"
+docker exec case-nota-fiscal-postgres psql -U nota_fiscal_app -d nota_fiscal \
+  -c "select pedido_id, nota_fiscal_id from nota_fiscal_processada"
 
-docker exec -it case-nota-fiscal-postgres psql -U nota_fiscal_app -d nota_fiscal \
-  -c "select event_id, aggregate_id, status, tentativas from outbox_evento"
+docker exec case-nota-fiscal-postgres psql -U nota_fiscal_app -d nota_fiscal \
+  -c "select aggregate_id, status, tentativas from outbox_evento"
 ```
 
-Envie duas vezes o mesmo payload/pedido. As duas respostas devem possuir o mesmo `id_nota_fiscal`, e as consultas devem mostrar uma nota e um evento para aquele pedido.
+Consulte uma fila sem consumir definitivamente a mensagem:
+
+```bash
+docker exec case-nota-fiscal-localstack sh -lc '
+URL=$(awslocal sqs get-queue-url --queue-name nota-fiscal-estoque --query QueueUrl --output text)
+awslocal sqs receive-message --queue-url "$URL" --max-number-of-messages 10 \
+  --message-attribute-names All --attribute-names All --visibility-timeout 0
+'
+```
 
 ## Testes
 
@@ -41,29 +63,16 @@ Envie duas vezes o mesmo payload/pedido. As duas respostas devem possuir o mesmo
 ./mvnw verify
 ```
 
-Com Docker disponível, Testcontainers inicia PostgreSQL e LocalStack isolados. Sem Docker, apenas os testes de infraestrutura são ignorados; os unitários continuam executando.
+Com Docker, Testcontainers valida PostgreSQL e LocalStack reais. O teste de carga JMeter está documentado em [performance/README.md](../performance/README.md).
 
-## Executar em AWS
-
-O mesmo artefato é usado em `dev`, `homol` e `prod`. Configure:
-
-- `SPRING_PROFILES_ACTIVE`;
-- `DB_URL=jdbc:postgresql://<aurora-writer>:5432/nota_fiscal`;
-- `DB_USERNAME` e `DB_PASSWORD` por injeção segura do Secrets Manager;
-- `AWS_SNS_NOTA_FISCAL_TOPIC_ARN`.
-
-Não configure endpoint do LocalStack nem access/secret key na workload AWS. Use IAM Role. O Aurora fica em subnets privadas e aceita porta 5432 somente do security group da aplicação.
-
-## Provisionamento com Terraform
+## Encerramento
 
 ```bash
-cd infra/terraform
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform fmt -check
-terraform validate
-terraform plan
-terraform apply
+docker compose down
 ```
 
-O Terraform cria SNS/SQS/DLQs, Secrets Manager e Aurora PostgreSQL Serverless v2. Use os outputs `aurora_writer_endpoint`, `aurora_master_secret_arn` e `nota_fiscal_gerada_topic_arn` na configuração segura do ambiente.
+Para apagar também banco, mensagens e métricas locais:
+
+```bash
+docker compose down -v
+```

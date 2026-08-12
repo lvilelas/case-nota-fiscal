@@ -129,3 +129,15 @@ Uma entrega de alta qualidade deve considerar o **ciclo completo de desenvolvime
 A profundidade aplicada em cada aspecto fica a critério do candidato.
 
 O principal objetivo é demonstrar **como você pensa, investiga problemas, toma decisões técnicas e estrutura uma solução sustentável para produção**.
+
+---
+
+## Documentação da solução
+
+- [Arquitetura hexagonal, eventos e diagrama AWS](ARCHITECTURE.md)
+- [Execução local com Docker Compose](docs/EXECUCAO-LOCAL.md)
+- [Infraestrutura Terraform e configuração do pipeline](infra/terraform/README.md)
+- [Runbook operacional](docs/RUNBOOK.md)
+- [Teste de performance com JMeter](performance/README.md)
+
+Com o perfil `local`, a especificação OpenAPI fica disponível em `/v3/api-docs` e a interface Swagger em `/swagger-ui.html`.

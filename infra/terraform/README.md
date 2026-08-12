@@ -1,15 +1,14 @@
 # Infraestrutura AWS com Terraform
 
-Este módulo provisiona:
+O módulo provisiona ECR, ALB, ECS/Fargate, IAM, Aurora PostgreSQL Serverless v2, SNS, quatro SQS/DLQs, Secrets Manager, autoscaling, ADOT/X-Ray, CloudWatch Logs, alarmes e dashboard.
 
-- um tópico SNS `NotaFiscalGerada`;
-- quatro filas SQS inscritas e uma DLQ por consumidor;
-- um secret da aplicação;
-- Aurora PostgreSQL Serverless v2 em subnets privadas;
-- security group permitindo PostgreSQL somente a partir da aplicação;
-- credencial master gerenciada pelo RDS no Secrets Manager.
+## Pré-requisitos de rede
 
-O cluster usa `engine_mode = "provisioned"` e instâncias `db.serverless`, configuração exigida pelo Aurora Serverless v2. Para produção, configure ao menos duas instâncias em zonas distintas para failover.
+- VPC existente;
+- ao menos duas subnets públicas para o ALB;
+- ao menos duas subnets privadas para Fargate e Aurora;
+- NAT Gateway ou VPC endpoints nas subnets privadas para ECR, Logs, Secrets Manager, SNS e X-Ray;
+- certificado ACM para HTTPS, exceto em ambiente efêmero de demonstração.
 
 ## Execução
 
@@ -22,15 +21,30 @@ terraform plan
 terraform apply
 ```
 
-O `terraform.tfvars` deve informar a VPC, ao menos duas subnets privadas e o security group da workload. Não coloque senhas no arquivo: `manage_master_user_password` delega sua criação e rotação inicial ao RDS/Secrets Manager.
+As credenciais master do Aurora são criadas pelo RDS e armazenadas no Secrets Manager. O ECS injeta somente `username` e `password`; nenhuma senha é armazenada no Terraform ou na task definition.
 
-Depois do provisionamento:
+## IAM
 
-- monte `DB_URL` com `aurora_writer_endpoint` e `aurora_port`;
-- injete usuário/senha a partir de `aurora_master_secret_arn` por pipeline ou integração da plataforma;
-- configure `AWS_SNS_NOTA_FISCAL_TOPIC_ARN` com `nota_fiscal_gerada_topic_arn`;
-- conceda à role da aplicação somente as permissões necessárias.
+- `ecs_execution`: pull no ECR, logs e injeção do secret do banco.
+- `ecs_task`: `sns:Publish`, leitura do secret da aplicação, exportação ao X-Ray e escrita EMF no log group de métricas.
+- `github_actions`: opcional, assumida por OIDC somente pela branch `main`, com push no ECR, registro de task definition e deploy do serviço.
 
-O secret master é suficiente para a prova, mas uma evolução recomendada é provisionar um usuário de aplicação com privilégios mínimos e separar a identidade que executa migrations da identidade de runtime.
+Para criar a role do pipeline, informe `github_repository` e o ARN do provider OIDC já existente na conta. Um provider OIDC é compartilhado por conta e, por isso, não é criado automaticamente por este módulo.
 
-Para state remoto, copie `backend.tf.example` e `backend.hcl.example`, ajuste bucket/chave e use `terraform init -backend-config=backend.hcl`. O bucket deve ter versionamento, criptografia e bloqueio de acesso público.
+## GitHub Actions
+
+Configure como Repository Variables:
+
+- `AWS_ROLE_ARN`: output `github_actions_role_arn`;
+- `AWS_REGION`;
+- `ECR_REPOSITORY`: nome retornado pelo ECR, por exemplo `prod-nota-fiscal`;
+- `ECS_CLUSTER`: output `ecs_cluster_name`;
+- `ECS_SERVICE`: output `ecs_service_name`.
+
+O pipeline publica `latest` e uma tag imutável pelo SHA. Cada deploy registra uma nova revisão da task definition apontando para o SHA; assim auditoria e rollback não dependem de uma tag mutável.
+
+## Observabilidade
+
+O ADOT sidecar recebe OTLP da aplicação, envia traces ao X-Ray, coleta o endpoint Prometheus interno e publica métricas JVM/processo/HTTP no CloudWatch via EMF. `awslogs` envia logs ao CloudWatch; Container Insights fornece CPU/memória. Alarmes cobrem CPU, memória, latência, 5xx, idade das filas, DLQ e falha definitiva da outbox.
+
+Consulte [RUNBOOK.md](../../docs/RUNBOOK.md) antes de redrive, replay ou rollback.

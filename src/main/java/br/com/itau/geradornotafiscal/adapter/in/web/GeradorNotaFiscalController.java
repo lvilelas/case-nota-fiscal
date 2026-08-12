@@ -6,6 +6,8 @@ import br.com.itau.geradornotafiscal.adapter.in.web.mapper.PedidoWebMapper;
 import br.com.itau.geradornotafiscal.domain.model.NotaFiscal;
 import br.com.itau.geradornotafiscal.domain.model.Pedido;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/pedido")
+@Tag(name = "Notas fiscais")
 public class GeradorNotaFiscalController {
     private static final Logger LOGGER = LoggerFactory.getLogger(GeradorNotaFiscalController.class);
 
@@ -30,6 +33,7 @@ public class GeradorNotaFiscalController {
     }
 
     @PostMapping("/gerarNotaFiscal")
+    @Operation(summary = "Gera ou recupera idempotentemente a nota fiscal de um pedido")
     public ResponseEntity<NotaFiscal> gerarNotaFiscal(@Valid @RequestBody PedidoRequest request) {
         Pedido pedido = pedidoWebMapper.paraDominio(request);
         LOGGER.info(

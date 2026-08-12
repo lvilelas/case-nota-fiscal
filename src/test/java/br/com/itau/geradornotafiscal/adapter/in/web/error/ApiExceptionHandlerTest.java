@@ -8,12 +8,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.mock.http.MockHttpInputMessage;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -98,6 +100,16 @@ class ApiExceptionHandlerTest {
 
         assertError(response.getBody(), HttpStatus.INTERNAL_SERVER_ERROR, "ERRO_INTERNO");
         assertEquals("Ocorreu um erro inesperado", response.getBody().mensagem());
+    }
+
+    @Test
+    void deveResponderNotFoundParaRotaInexistente() {
+        var response = handler.tratarRecursoNaoEncontrado(
+                new NoResourceFoundException(HttpMethod.GET, "/rota-inexistente", "rota-inexistente"),
+                request);
+
+        assertError(response.getBody(), HttpStatus.NOT_FOUND, "RECURSO_NAO_ENCONTRADO");
+        assertEquals("O recurso solicitado não existe", response.getBody().mensagem());
     }
 
     private void assertError(ApiError error, HttpStatus status, String codigo) {

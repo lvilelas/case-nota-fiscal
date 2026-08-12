@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Nota fiscal - mais de seis itens">
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Carga concorrente">
+        <stringProp name="ThreadGroup.num_threads">${__P(threads,10)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${__P(ramp_up,5)}</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController">
+          <stringProp name="LoopController.loops">${__P(iterations,10)}</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Gerar pedido único">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">long base = System.currentTimeMillis() % 1_000_000_000L
+vars.put('pedido_id', String.valueOf(base + (ctx.getThreadNum() * 10000L) + vars.getIteration()))</stringProp>
+        </JSR223PreProcessor>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Gerar nota fiscal com sete itens">
+          <stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp>
+          <stringProp name="HTTPSampler.port">${__P(port,8080)}</stringProp>
+          <stringProp name="HTTPSampler.protocol">http</stringProp>
+          <stringProp name="HTTPSampler.path">/api/pedido/gerarNotaFiscal</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value"><![CDATA[{
+  "id_pedido": ${pedido_id},
+  "data": "2026-08-11",
+  "valor_total_itens": 700.0,
+  "valor_frete": 10.0,
+  "itens": [
+    {"id_item": 1, "descricao": "Item 1", "valor_unitario": 100.0, "quantidade": 1},
+    {"id_item": 2, "descricao": "Item 2", "valor_unitario": 100.0, "quantidade": 1},
+    {"id_item": 3, "descricao": "Item 3", "valor_unitario": 100.0, "quantidade": 1},
+    {"id_item": 4, "descricao": "Item 4", "valor_unitario": 100.0, "quantidade": 1},
+    {"id_item": 5, "descricao": "Item 5", "valor_unitario": 100.0, "quantidade": 1},
+    {"id_item": 6, "descricao": "Item 6", "valor_unitario": 100.0, "quantidade": 1},
+    {"id_item": 7, "descricao": "Item 7", "valor_unitario": 100.0, "quantidade": 1}
+  ],
+  "destinatario": {
+    "nome": "Teste Performance",
+    "tipo_pessoa": "FISICA",
+    "documentos": [{"tipo": "CPF", "numero": "88740347095"}],
+    "enderecos": [{
+      "logradouro": "Avenida Teste", "numero": "100", "bairro": "Centro",
+      "cidade": "Sao Paulo", "estado": "SP", "pais": "Brasil", "cep": "01001000",
+      "finalidade": "ENTREGA", "regiao": "SUDESTE"
+    }]
+  }
+}]]></stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Headers">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="Content-Type" elementType="Header">
+                <stringProp name="Header.name">Content-Type</stringProp>
+                <stringProp name="Header.value">application/json</stringProp>
+              </elementProp>
+              <elementProp name="X-Flow-Id" elementType="Header">
+                <stringProp name="Header.name">X-Flow-Id</stringProp>
+                <stringProp name="Header.value">jmeter-${pedido_id}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="HTTP 200">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="200">200</stringProp>
+            </collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+          <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Resposta consistente com sete itens">
+            <stringProp name="scriptLanguage">groovy</stringProp>
+            <stringProp name="script"><![CDATA[def response = new groovy.json.JsonSlurper().parseText(prev.getResponseDataAsString())
+if (response.itens?.size() != 7 || response.valor_total_itens != 700.0) {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("Resposta inconsistente: quantidade=${response.itens?.size()}, total=${response.valor_total_itens}")
+}]]></stringProp>
+          </JSR223Assertion>
+          <hashTree/>
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="Resposta em até dois segundos">
+            <stringProp name="DurationAssertion.duration">${__P(max_sample_ms,2000)}</stringProp>
+          </DurationAssertion>
+          <hashTree/>
+        </hashTree>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>
